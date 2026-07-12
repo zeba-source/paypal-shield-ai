@@ -1,0 +1,6 @@
+streamlit
+pandas
+numpy
+kafka-python
+mysql-connector-python
+plotly
