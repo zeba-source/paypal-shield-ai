@@ -1,10 +1,1 @@
-Project: real-time FinTech fraud detection (Windows, Python venv, VS Code).
-Stack: Kafka 3.9.1 at localhost:9092 (ZooKeeper mode), topic "transactions-topic", MySQL database fintech_db, table transactions, kafka-python, mysql-connector-python, FastAPI.
-Existing files: producer.py (streams PaySim CSV rows to Kafka), consumer.py (Kafka -> MySQL), ai_agent.py (SQL agent, DO NOT modify).
-Transaction fields: step, type, amount, nameOrig, oldbalanceOrg, newbalanceOrig, nameDest, oldbalanceDest, newbalanceDest, isFraud, isFlaggedFraud.
-Rules:
-- isFraud and isFlaggedFraud are labels for evaluation only. Agents must never use them as inputs.
-- Each agent returns {"agent": str, "score": 0-100, "reasons": [str], "features": dict}.
-- Final ALLOW / 2FA / HOLD / BLOCK decisions come from a deterministic policy engine, never from an LLM.
-- Use a .env file for config (DB creds, Kafka servers). No hardcoded passwords.
-- Add logging, type hints and try/except around DB and Kafka calls.
+Real-time FinTech fraud detection. Kafka 3.9.1 at localhost:9092 (ZooKeeper mode), topics transactions-topic and risk-decisions-topic, MySQL 8.0 database fintech_db, kafka-python, mysql-connector-python, FastAPI, Streamlit. Existing: producer.py, consumer.py, ai_agent.py (do not modify ai_agent.py), dashboard.py (will be replaced later). Transaction fields: step,type,amount,nameOrig,oldbalanceOrg,newbalanceOrig,nameDest,oldbalanceDest,newbalanceDest,isFraud,isFlaggedFraud plus event_time,lat,lon,country,city. isFraud and isFlaggedFraud are labels for evaluation only; agents must never read them. Each agent returns {agent, score 0-100, reasons[], features{}}. Final actions come from a deterministic policy engine, never from an LLM. Config only via .env/config.py. MySQL syntax must work on MySQL 8.0 (no ADD COLUMN IF NOT EXISTS).

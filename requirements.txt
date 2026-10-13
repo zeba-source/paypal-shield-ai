@@ -1,6 +1,11 @@
+python-dotenv
+mysql-connector-python
+kafka-python
+fastapi
+uvicorn
+pydantic
+requests
 streamlit
 pandas
 numpy
-kafka-python
-mysql-connector-python
-plotly
+pytest

@@ -9,6 +9,10 @@ from pathlib import Path
 import pandas as pd
 from kafka import KafkaProducer
 
+from config import KAFKA_BOOTSTRAP, TOPIC_TRANSACTIONS, load_dotenv
+
+load_dotenv()
+
 CITY_DATA = {
     "Mumbai": {"country": "India", "lat": 19.0760, "lon": 72.8777},
     "Delhi": {"country": "India", "lat": 28.6139, "lon": 77.2090},
@@ -102,7 +106,7 @@ if __name__ == "__main__":
     args = parse_args()
 
     producer = KafkaProducer(
-        bootstrap_servers="localhost:9092",
+        bootstrap_servers=KAFKA_BOOTSTRAP,
         value_serializer=lambda value: json.dumps(value).encode("utf-8"),
     )
 
@@ -111,7 +115,7 @@ if __name__ == "__main__":
 
     for index, row in df.iterrows():
         data = build_event_payload(row.to_dict(), index)
-        producer.send("transactions-topic", value=data)
+        producer.send(TOPIC_TRANSACTIONS, value=data)
         print(f"Sent: {data}")
         time.sleep(args.delay)
 

@@ -29,18 +29,13 @@
 
 
 import json
-import os
 
-import mysql.connector
 from kafka import KafkaConsumer
 
-DB_CONFIG = {
-    "host": os.getenv("MYSQL_HOST", "localhost"),
-    "user": os.getenv("MYSQL_USER", "root"),
-    "password": os.getenv("MYSQL_PASSWORD", ""),
-    "database": os.getenv("MYSQL_DATABASE", "fintech_db"),
-    "autocommit": False,
-}
+from config import KAFKA_BOOTSTRAP, TOPIC_TRANSACTIONS, load_dotenv
+from db import get_connection
+
+load_dotenv()
 
 INSERT_SQL = """
 INSERT INTO transactions (
@@ -56,7 +51,7 @@ VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 
 
 def get_db_connection():
-    return mysql.connector.connect(**DB_CONFIG)
+    return get_connection()
 
 
 def normalize_float(value, default=0.0):
@@ -95,8 +90,8 @@ def build_transaction_values(data):
 
 
 consumer = KafkaConsumer(
-    "transactions-topic",
-    bootstrap_servers="localhost:9092",
+    TOPIC_TRANSACTIONS,
+    bootstrap_servers=KAFKA_BOOTSTRAP,
     auto_offset_reset="earliest",
     enable_auto_commit=True,
     value_deserializer=lambda value: json.loads(value.decode("utf-8")),
