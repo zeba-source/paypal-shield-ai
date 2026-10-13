@@ -12,6 +12,7 @@ MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "")
 MYSQL_DATABASE = os.getenv("MYSQL_DATABASE", "fintech_db")
 KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP", "localhost:9092")
 API_URL = os.getenv("API_URL", "http://localhost:8000")
+DEV_MODE = os.getenv("DEV_MODE", "false").lower() == "true"
 
 DB_CONFIG = {
     "host": MYSQL_HOST,
@@ -72,6 +73,7 @@ __all__ = [
     "MYSQL_DATABASE",
     "KAFKA_BOOTSTRAP",
     "API_URL",
+    "DEV_MODE",
     "TOPIC_TRANSACTIONS",
     "TOPIC_RISK_DECISIONS",
     "TOPIC_EVENTS",

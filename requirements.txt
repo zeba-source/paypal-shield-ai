@@ -9,3 +9,4 @@ streamlit
 pandas
 numpy
 pytest
+httpx2
