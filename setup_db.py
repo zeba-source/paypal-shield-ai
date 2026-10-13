@@ -179,6 +179,19 @@ def ensure_other_tables(conn):
             """
         )
 
+    if not column_exists(conn, "account_profiles", "trusted_locations"):
+        with conn.cursor() as cur:
+            cur.execute(
+                "ALTER TABLE `account_profiles` ADD COLUMN `trusted_locations` JSON NULL"
+            )
+    if not column_exists(conn, "account_profiles", "last_city"):
+        with conn.cursor() as cur:
+            cur.execute(
+                "ALTER TABLE `account_profiles` ADD COLUMN `last_city` VARCHAR(50) NULL"
+            )
+
+    with conn.cursor() as cur:
+
         cur.execute(
             """
             CREATE TABLE IF NOT EXISTS `risk_alerts` (
