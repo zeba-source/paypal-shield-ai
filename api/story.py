@@ -70,6 +70,12 @@ def hourly():
     return [{"hour": int(row["hour"]), "normal": int(row["normal"] or 0), "flagged": int(row["flagged"] or 0)} for row in rows]
 
 
+@router.get("/story/amounts")
+def amounts():
+    rows = fetch("SELECT amount FROM transactions WHERE amount IS NOT NULL ORDER BY amount")
+    return [{"amount": float(row["amount"])} for row in rows]
+
+
 @router.get("/story/actions")
 def actions():
     rows = fetch("SELECT r.action, COUNT(*) AS count, SUM(t.amount) AS amount FROM risk_alerts r JOIN transactions t ON t.txn_id=r.txn_id GROUP BY r.action")
