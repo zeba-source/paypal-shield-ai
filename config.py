@@ -47,6 +47,16 @@ RISK_SCORES = {
     "geo_score": 0.40,
 }
 
+FREQUENCY_THRESHOLDS = {
+    "minimum_history": 3,
+    "mule_unique_senders": 5,
+    "pass_through_min": 0.8,
+    "pass_through_max": 1.1,
+    "short_window_minutes": 15,
+    "spike_multiplier": 3.0,
+    "drained_balance_ratio": 0.10,
+}
+
 __all__ = [
     "BASE_DIR",
     "DB_CONFIG",
@@ -62,5 +72,6 @@ __all__ = [
     "AGENT_THRESHOLDS",
     "POLICY_THRESHOLDS",
     "RISK_SCORES",
+    "FREQUENCY_THRESHOLDS",
     "load_dotenv",
 ]
