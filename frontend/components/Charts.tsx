@@ -1,0 +1,7 @@
+"use client";
+import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import type { AgentName, StoryHourly } from "@/lib/types";
+
+const colors: Record<AgentName, string> = { frequency: "#a78bfa", time: "#22d3ee", geo: "#34d399" };
+export function HourlyChart({ data }: { data: StoryHourly[] }) { return <ResponsiveContainer width="100%" height={230}><BarChart data={data}><CartesianGrid stroke="#253149" vertical={false} /><XAxis dataKey="hour" stroke="#71809b" tickLine={false} /><YAxis stroke="#71809b" tickLine={false} /><Tooltip contentStyle={{ background: "#121b2b", border: "1px solid #293852" }} /><Bar dataKey="normal" stackId="a" fill="#64748b" /><Bar dataKey="flagged" stackId="a" fill="#f59e0b" /></BarChart></ResponsiveContainer>; }
+export function AgentBars({ scores }: { scores: Record<string, number> }) { const data = Object.entries(scores).map(([agent, score]) => ({ agent, score })); return <ResponsiveContainer width="100%" height={220}><BarChart data={data} layout="vertical"><CartesianGrid stroke="#253149" horizontal={false} /><XAxis type="number" domain={[0, 100]} stroke="#71809b" /><YAxis type="category" dataKey="agent" stroke="#71809b" width={85} /><Tooltip contentStyle={{ background: "#121b2b", border: "1px solid #293852" }} /><Bar dataKey="score" radius={[0, 4, 4, 0]}>{data.map(item => <Cell key={item.agent} fill={colors[item.agent as AgentName] ?? "#94a3b8"} />)}</Bar></BarChart></ResponsiveContainer>; }

@@ -1,5 +1,6 @@
 import hashlib
 import hmac
+import json
 import os
 import secrets
 import smtplib
@@ -22,7 +23,7 @@ from .story import router as story_router
 app = FastAPI(title="FinTech Risk API")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000", "*"],
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -146,6 +147,22 @@ def dev_otp(txn_id: int):
         raise HTTPException(status_code=404, detail="Not found")
     otp = _dev_otps.get(txn_id)
     if otp is None:
+        conn = get_connection()
+        try:
+            cursor = conn.cursor(dictionary=True)
+            verification = _latest_verification(cursor, txn_id)
+            if verification and verification["status"] == "PENDING":
+                otp = f"{secrets.randbelow(900000) + 100000:06d}"
+                cursor.execute(
+                    "UPDATE verification_requests SET otp_hash = %s WHERE id = %s",
+                    (_hash_otp(otp), verification["id"]),
+                )
+                conn.commit()
+                _dev_otps[txn_id] = otp
+        finally:
+            cursor.close()
+            conn.close()
+    if otp is None:
         raise HTTPException(status_code=404, detail="OTP not found")
     return {"txn_id": txn_id, "otp": otp}
 
@@ -212,10 +229,17 @@ def _set_txn_status(cursor, txn_id, status):
 
 @app.get("/alerts")
 def alerts(limit: int = Query(50, ge=1, le=500)):
-    return _execute(
+    rows = _execute(
         "SELECT * FROM risk_alerts ORDER BY created_at DESC, id DESC LIMIT %s",
-        (limit,), dictionary=True,
+        (int(limit),), dictionary=True,
     )
+    for row in rows:
+        if isinstance(row.get("reasons"), str):
+            try:
+                row["reasons"] = json.loads(row["reasons"])
+            except Exception:
+                pass
+    return rows
 
 
 @app.get("/transactions/{txn_id}")
@@ -246,9 +270,9 @@ def stats():
     completed = verification_counts.get("PASSED", 0) + verification_counts.get("FAILED", 0) + verification_counts.get("EXPIRED", 0)
     return {
         "counts_by_action": counts,
-        "average_final_score": average["average_final_score"],
+        "average_final_score": average["average_final_score"] if average else None,
         "two_fa_pass_rate": verification_counts.get("PASSED", 0) / completed if completed else 0.0,
-        "pending_2fa_count": pending["count"],
+        "pending_2fa_count": pending["count"] if pending else 0,
     }
 
 
@@ -262,10 +286,17 @@ def pending_2fa():
 
 @app.get("/review-queue")
 def review_queue():
-    return _execute(
+    rows = _execute(
         "SELECT * FROM risk_alerts WHERE action = 'HOLD_FOR_REVIEW' ORDER BY created_at ASC, id ASC",
         dictionary=True,
     )
+    for row in rows:
+        if isinstance(row.get("reasons"), str):
+            try:
+                row["reasons"] = json.loads(row["reasons"])
+            except Exception:
+                pass
+    return rows
 
 
 @app.post("/review/{txn_id}")
