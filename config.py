@@ -41,6 +41,12 @@ POLICY_THRESHOLDS = {
     "BLOCK": 90,
 }
 
+POLICY_SCORE_THRESHOLDS = {
+    "REQUEST_2FA": 40,
+    "HOLD_FOR_REVIEW": 70,
+    "BLOCK": 90,
+}
+
 RISK_SCORES = {
     "frequency_score": 0.35,
     "time_score": 0.25,
@@ -71,6 +77,7 @@ __all__ = [
     "TOPIC_EVENTS",
     "AGENT_THRESHOLDS",
     "POLICY_THRESHOLDS",
+    "POLICY_SCORE_THRESHOLDS",
     "RISK_SCORES",
     "FREQUENCY_THRESHOLDS",
     "load_dotenv",

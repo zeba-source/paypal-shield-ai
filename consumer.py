@@ -35,6 +35,8 @@ from kafka import KafkaConsumer
 from config import KAFKA_BOOTSTRAP, TOPIC_TRANSACTIONS, load_dotenv
 from db import get_connection
 
+# Legacy batch consumer. Run only one writer: use risk_consumer.py for decisions.
+
 load_dotenv()
 
 INSERT_SQL = """
