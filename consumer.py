@@ -120,7 +120,7 @@ try:
             batch.clear()
 
         if float(data.get("amount", 0) or 0) > 50000:
-            print("⚠️ FRAUD ALERT: High Transaction Detected")
+            print("FRAUD ALERT: High Transaction Detected")
 
     if batch:
         cursor.executemany(INSERT_SQL, batch)

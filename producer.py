@@ -99,6 +99,12 @@ def parse_args():
         default=0.05,
         help="Delay in seconds between messages (default: 0.05).",
     )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Maximum number of rows to publish (default: all rows).",
+    )
     return parser.parse_args()
 
 
@@ -113,7 +119,9 @@ if __name__ == "__main__":
     csv_path = Path(__file__).resolve().parent / "small_dataset.csv"
     df = pd.read_csv(csv_path)
 
-    for index, row in df.iterrows():
+    rows = df if args.limit is None else df.head(args.limit)
+
+    for index, row in rows.iterrows():
         data = build_event_payload(row.to_dict(), index)
         producer.send(TOPIC_TRANSACTIONS, value=data)
         print(f"Sent: {data}")

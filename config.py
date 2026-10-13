@@ -23,8 +23,8 @@ DB_CONFIG = {
     "use_unicode": True,
 }
 
-TOPIC_TRANSACTIONS = "transactions-topic"
-TOPIC_RISK_DECISIONS = "risk-decisions-topic"
+TOPIC_TRANSACTIONS = os.getenv("KAFKA_TRANSACTIONS_TOPIC", "transactions-topic")
+TOPIC_RISK_DECISIONS = os.getenv("KAFKA_RISK_DECISIONS_TOPIC", "risk-decisions-topic")
 TOPIC_EVENTS = TOPIC_TRANSACTIONS
 
 AGENT_THRESHOLDS = {
