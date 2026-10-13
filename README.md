@@ -52,7 +52,7 @@ To start the infrastructure, API, consumer, and dashboard without continuously p
 .\start_all.ps1 -NoProducer
 ```
 
-The script starts ZooKeeper and Kafka only when their ports are not already listening, waits up to 90 seconds for Kafka, initializes the schema and topics, and opens titled windows for the API, risk consumer, dashboard, and optional producer.
+The script starts ZooKeeper and Kafka only when their ports are not already listening, waits up to 90 seconds for Kafka, initializes the schema and topics, and opens titled windows for the API, risk consumer, frontend, dashboard, and optional producer.
 
 URLs:
 
@@ -64,6 +64,27 @@ Stop the services:
 ```powershell
 .\stop_all.ps1
 ```
+
+## Dashboard
+
+The Next.js dashboard runs at http://localhost:3000 alongside the API and Kafka services.
+
+- **Story** (`/story`) explains the dataset, baseline activity, three detectors, deterministic policy, a case timeline, and evaluation limits.
+- **Live** (`/live`) is the command center: an SSE event feed with polling fallback, flagged-location map, pending 2FA, and analyst review queue.
+- **Demo** (`/demo`) walks an audience through Mule, Night-time, and Impossible-travel scenarios, including the real agent scores, policy action, OTP flow, and final status.
+
+### Two-minute demo
+
+1. Run `start_all.ps1 -NoProducer` from the `Fintech` folder.
+2. Open http://localhost:3000/demo and choose **Mule account**.
+3. Let the event pipeline reach the 2FA challenge, click **Fetch dev OTP**, and verify it. Repeat with a wrong code three times to show the held path.
+4. Switch to http://localhost:3000/live to show the same events arriving in the command center, then use **Reset demo** before another run.
+
+Screenshots can be added here:
+
+- `docs/screenshots/story.png` - Story page placeholder
+- `docs/screenshots/live.png` - Live command center placeholder
+- `docs/screenshots/demo.png` - Scenario walkthrough placeholder
 
 ## Agents
 

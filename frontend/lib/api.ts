@@ -1,4 +1,4 @@
-import type { Action, Alert, AgentName, CaseSummary, GeoStory, LiveLocation, Pending2FA, Stats, StoryActions, StoryAgents, StoryAmount, StoryCase, StoryHourly, StoryMetrics, StoryOverview } from "@/lib/types";
+import type { Action, Alert, AgentName, CaseSummary, DemoResult, GeoStory, LiveLocation, Pending2FA, Stats, StoryActions, StoryAgents, StoryAmount, StoryCase, StoryHourly, StoryMetrics, StoryOverview } from "@/lib/types";
 
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -27,7 +27,8 @@ export const api = {
   verify2FA: (txnId: number, otp: string) => request<{ status: string }>("/2fa/verify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ txn_id: txnId, otp }) }),
   review: (txnId: number, decision: "APPROVE" | "BLOCK", analyst: string) => request<{ status: string }>(`/review/${txnId}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ decision, analyst }) }),
   devOtp: (txnId: number) => request<{ otp: string }>(`/dev/otp/${txnId}`),
-  demo: (name: "mule" | "night" | "travel") => request<{ scenario: string; published: number; txn_ids: number[] }>(`/demo/scenario/${name}`, { method: "POST" }),
+  demo: (name: "mule" | "night" | "travel") => request<DemoResult>(`/demo/scenario/${name}`, { method: "POST" }),
+  resetDemo: () => request<{ status: string }>("/demo/reset-demo-accounts", { method: "POST" }),
 };
 
 export type { Action, AgentName };

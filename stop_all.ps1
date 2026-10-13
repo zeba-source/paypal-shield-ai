@@ -22,9 +22,17 @@ Get-CimInstance Win32_Process -Filter "Name = 'python.exe'" | Where-Object {
     Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
 }
 
+# Stop the Next.js development server started by start_all.ps1.
+Get-CimInstance Win32_Process | Where-Object {
+    $_.CommandLine -match 'next dev|next-server|frontend.*npm run dev|FinTech\\Fintech\\frontend'
+} | ForEach-Object {
+    Write-Host "Stopping frontend process $($_.ProcessId)"
+    Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+}
+
 # Stop Kafka and ZooKeeper Java processes by their launcher command lines.
 Get-CimInstance Win32_Process -Filter "Name = 'java.exe'" | Where-Object {
-    $_.CommandLine -match 'kafka-server-start|QuorumPeerMain|zookeeper-server-start'
+    $_.CommandLine -match 'kafka-server-start|kafka\.Kafka|QuorumPeerMain|zookeeper-server-start'
 } | ForEach-Object {
     Write-Host "Stopping Kafka/ZooKeeper process $($_.ProcessId)"
     Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue

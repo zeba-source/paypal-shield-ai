@@ -73,6 +73,8 @@ try {
     $tracked += @{ title = "FinTech API"; pid = $api.Id }
     $consumer = Start-Window "FinTech Risk Consumer" $ProjectRoot "& '$Python' -u risk_consumer.py"
     $tracked += @{ title = "FinTech Risk Consumer"; pid = $consumer.Id }
+    $frontend = Start-Window "FinTech Frontend" (Join-Path $ProjectRoot "frontend") "npm run dev"
+    $tracked += @{ title = "FinTech Frontend"; pid = $frontend.Id }
     $dashboard = Start-Window "FinTech Dashboard" $ProjectRoot "& '$Python' -m streamlit run dashboard.py --server.headless true"
     $tracked += @{ title = "FinTech Dashboard"; pid = $dashboard.Id }
     if (-not $NoProducer) {
@@ -89,5 +91,6 @@ $tracked | ConvertTo-Json | Set-Content -LiteralPath $StateFile -Encoding UTF8
 Write-Host ""
 Write-Host "FinTech services started."
 Write-Host "Dashboard: http://localhost:8501"
+Write-Host "Frontend: http://localhost:3000"
 Write-Host "API docs:  http://localhost:8000/docs"
 Write-Host "Stop with: .\stop_all.ps1"
