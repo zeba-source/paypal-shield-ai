@@ -265,6 +265,17 @@ def stats():
         "SELECT COUNT(*) AS count FROM txn_status WHERE status = 'PENDING_2FA'",
         dictionary=True, fetchone=True,
     )
+    latency_rows = _execute(
+        """
+        SELECT TIMESTAMPDIFF(MICROSECOND, received.created_at, decision.created_at) / 1000 AS latency_ms
+        FROM txn_events received
+        JOIN txn_events decision ON decision.txn_id = received.txn_id
+        WHERE received.stage = 'RECEIVED' AND decision.stage = 'POLICY_DECISION'
+        """, dictionary=True,
+    )
+    latencies = sorted(float(row["latency_ms"]) for row in latency_rows if row.get("latency_ms") is not None)
+    average_latency = sum(latencies) / len(latencies) if latencies else 0.0
+    p95_latency = latencies[min(len(latencies) - 1, int(len(latencies) * 0.95))] if latencies else 0.0
     counts = {row["action"]: row["count"] for row in action_rows}
     verification_counts = {row["status"]: row["count"] for row in two_fa}
     completed = verification_counts.get("PASSED", 0) + verification_counts.get("FAILED", 0) + verification_counts.get("EXPIRED", 0)
@@ -273,6 +284,8 @@ def stats():
         "average_final_score": average["average_final_score"] if average else None,
         "two_fa_pass_rate": verification_counts.get("PASSED", 0) / completed if completed else 0.0,
         "pending_2fa_count": pending["count"] if pending else 0,
+        "average_decision_latency_ms": average_latency,
+        "p95_decision_latency_ms": p95_latency,
     }
 
 
@@ -281,6 +294,19 @@ def pending_2fa():
     return _execute(
         "SELECT * FROM verification_requests WHERE status = 'PENDING' ORDER BY created_at DESC",
         dictionary=True,
+    )
+
+
+@app.get("/live/locations")
+def live_locations(limit: int = Query(100, ge=1, le=500)):
+    return _execute(
+        """
+        SELECT r.txn_id, r.action, t.lat, t.lon, t.city, t.country, t.event_time
+        FROM risk_alerts r JOIN transactions t ON t.txn_id = r.txn_id
+        WHERE t.lat IS NOT NULL AND t.lon IS NOT NULL
+        ORDER BY r.created_at DESC, r.id DESC LIMIT %s
+        """,
+        (int(limit),), dictionary=True,
     )
 
 

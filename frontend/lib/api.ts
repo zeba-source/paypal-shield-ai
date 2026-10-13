@@ -1,4 +1,4 @@
-import type { Action, Alert, AgentName, CaseSummary, GeoStory, Pending2FA, Stats, StoryActions, StoryAgents, StoryAmount, StoryCase, StoryHourly, StoryMetrics, StoryOverview } from "@/lib/types";
+import type { Action, Alert, AgentName, CaseSummary, GeoStory, LiveLocation, Pending2FA, Stats, StoryActions, StoryAgents, StoryAmount, StoryCase, StoryHourly, StoryMetrics, StoryOverview } from "@/lib/types";
 
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -20,6 +20,7 @@ export const api = {
   geo: (accountId: string) => request<GeoStory>(`/story/geo/${encodeURIComponent(accountId)}`),
   metrics: () => request<StoryMetrics>("/story/metrics"),
   stats: () => request<Stats>("/stats"),
+  locations: (limit = 100) => request<LiveLocation[]>(`/live/locations?limit=${limit}`),
   alerts: (limit = 50) => request<Alert[]>(`/alerts?limit=${limit}`),
   pending2FA: () => request<Pending2FA[]>("/pending-2fa"),
   reviewQueue: () => request<Alert[]>("/review-queue"),

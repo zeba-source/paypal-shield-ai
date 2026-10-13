@@ -5,6 +5,7 @@ import type { StreamEvent } from "@/lib/types";
 
 export function useEventStream() {
   const [event, setEvent] = useState<StreamEvent | null>(null);
+  const [events, setEvents] = useState<StreamEvent[]>([]);
   const [connected, setConnected] = useState(false);
   useEffect(() => {
     let source: EventSource | null = null;
@@ -13,11 +14,11 @@ export function useEventStream() {
       if (stopped) return;
       source = new EventSource(`${API_URL}/stream`);
       source.onopen = () => setConnected(true);
-      source.onmessage = message => { try { setEvent(JSON.parse(message.data) as StreamEvent); } catch { /* ignore malformed events */ } };
+      source.onmessage = message => { try { const next = JSON.parse(message.data) as StreamEvent; setEvent(next); setEvents(previous => [...previous, next].slice(-200)); } catch { /* ignore malformed events */ } };
       source.onerror = () => { setConnected(false); source?.close(); window.setTimeout(connect, 1500); };
     };
     connect();
     return () => { stopped = true; source?.close(); setConnected(false); };
   }, []);
-  return { event, connected };
+  return { event, events, connected };
 }
