@@ -28,69 +28,112 @@
 #             pass
 
 
-from kafka import KafkaConsumer
 import json
+import os
+
 import mysql.connector
+from kafka import KafkaConsumer
 
-# MySQL Connection
-db = mysql.connector.connect(
-    host="localhost",
-    user="root",
-    password="root",
-    database="fintech_db"
+DB_CONFIG = {
+    "host": os.getenv("MYSQL_HOST", "localhost"),
+    "user": os.getenv("MYSQL_USER", "root"),
+    "password": os.getenv("MYSQL_PASSWORD", ""),
+    "database": os.getenv("MYSQL_DATABASE", "fintech_db"),
+    "autocommit": False,
+}
+
+INSERT_SQL = """
+INSERT INTO transactions (
+    step, type, amount, nameOrig,
+    oldbalanceOrg, newbalanceOrig,
+    nameDest, oldbalanceDest,
+    newbalanceDest, isFraud,
+    isFlaggedFraud, event_time,
+    lat, lon, country, city
 )
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+"""
 
-cursor = db.cursor()
 
-# Kafka Consumer
+def get_db_connection():
+    return mysql.connector.connect(**DB_CONFIG)
+
+
+def normalize_float(value, default=0.0):
+    try:
+        return float(value) if value not in (None, "") else default
+    except (TypeError, ValueError):
+        return default
+
+
+def normalize_int(value, default=0):
+    try:
+        return int(value) if value not in (None, "") else default
+    except (TypeError, ValueError):
+        return default
+
+
+def build_transaction_values(data):
+    return (
+        normalize_int(data.get("step"), 0),
+        data.get("type"),
+        normalize_float(data.get("amount"), 0.0),
+        data.get("nameOrig"),
+        normalize_float(data.get("oldbalanceOrg"), 0.0),
+        normalize_float(data.get("newbalanceOrig"), 0.0),
+        data.get("nameDest"),
+        normalize_float(data.get("oldbalanceDest"), 0.0),
+        normalize_float(data.get("newbalanceDest"), 0.0),
+        normalize_int(data.get("isFraud"), 0),
+        normalize_int(data.get("isFlaggedFraud"), 0),
+        data.get("event_time"),
+        normalize_float(data.get("lat"), 0.0),
+        normalize_float(data.get("lon"), 0.0),
+        data.get("country"),
+        data.get("city"),
+    )
+
+
 consumer = KafkaConsumer(
-    'transactions-topic',
-    bootstrap_servers='localhost:9092',
-    auto_offset_reset='earliest',
+    "transactions-topic",
+    bootstrap_servers="localhost:9092",
+    auto_offset_reset="earliest",
     enable_auto_commit=True,
-    value_deserializer=lambda x: json.loads(x.decode('utf-8'))
+    value_deserializer=lambda value: json.loads(value.decode("utf-8")),
 )
 
 print("Waiting for messages...\n")
 
-for message in consumer:
+batch = []
 
-    data = message.value
+try:
+    db = get_db_connection()
+    cursor = db.cursor()
 
-    print("Received:", data)
+    for message in consumer:
+        data = message.value
+        if not isinstance(data, dict):
+            continue
 
-    # Insert into MySQL
-    sql = """
-    INSERT INTO transactions (
-        step, type, amount, nameOrig,
-        oldbalanceOrg, newbalanceOrig,
-        nameDest, oldbalanceDest,
-        newbalanceDest, isFraud,
-        isFlaggedFraud
-    )
-    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-    """
+        print("Received:", data)
+        batch.append(build_transaction_values(data))
 
-    values = (
-        data.get('step'),
-        data.get('type'),
-        data.get('amount'),
-        data.get('nameOrig'),
-        data.get('oldbalanceOrg'),
-        data.get('newbalanceOrig'),
-        data.get('nameDest'),
-        data.get('oldbalanceDest'),
-        data.get('newbalanceDest'),
-        int(data.get('isFraud', 0)),
-        int(data.get('isFlaggedFraud', 0))
-    )
+        if len(batch) >= 100:
+            cursor.executemany(INSERT_SQL, batch)
+            db.commit()
+            print(f"Inserted batch of {len(batch)} rows into MySQL")
+            batch.clear()
 
-    cursor.execute(sql, values)
+        if float(data.get("amount", 0) or 0) > 50000:
+            print("⚠️ FRAUD ALERT: High Transaction Detected")
 
-    db.commit()
+    if batch:
+        cursor.executemany(INSERT_SQL, batch)
+        db.commit()
+        print(f"Inserted final batch of {len(batch)} rows into MySQL")
 
-    print("Inserted into MySQL")
-
-    # Fraud Detection
-    if data.get('amount', 0) > 50000:
-        print("⚠️ FRAUD ALERT: High Transaction Detected")
+finally:
+    if "cursor" in locals():
+        cursor.close()
+    if "db" in locals():
+        db.close()
