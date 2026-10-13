@@ -6,7 +6,7 @@ import requests
 from kafka import KafkaConsumer, KafkaProducer
 
 from config import API_URL, KAFKA_BOOTSTRAP, TOPIC_RISK_DECISIONS, TOPIC_TRANSACTIONS
-from db import get_connection
+from db import get_connection, record_txn_event
 from orchestrator import RiskOrchestrator
 
 
@@ -17,9 +17,9 @@ INSERT INTO transactions (
     nameDest, oldbalanceDest,
     newbalanceDest, isFraud,
     isFlaggedFraud, event_time,
-    lat, lon, country, city
+    lat, lon, country, city, scenario
 )
-VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 """
 
 
@@ -47,7 +47,7 @@ def build_transaction_values(data):
         normalize_float(data.get("newbalanceDest"), 0.0),
         normalize_int(data.get("isFraud"), 0), normalize_int(data.get("isFlaggedFraud"), 0),
         data.get("event_time"), normalize_float(data.get("lat"), 0.0),
-        normalize_float(data.get("lon"), 0.0), data.get("country"), data.get("city"),
+        normalize_float(data.get("lon"), 0.0), data.get("country"), data.get("city"), data.get("scenario"),
     )
 
 
@@ -100,6 +100,7 @@ def main():
             txn_id = insert_transaction(data)
             txn = dict(data)
             txn["txn_id"] = txn_id
+            record_txn_event(txn_id, "RECEIVED", {"type": txn.get("type"), "amount": txn.get("amount"), "scenario": txn.get("scenario")})
             decision = orchestrator.process(txn)
             producer.send(TOPIC_RISK_DECISIONS, value=decision).get(timeout=5)
             consumer.commit()

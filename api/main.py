@@ -15,6 +15,8 @@ from pydantic import BaseModel, Field
 
 from config import DEV_MODE
 from db import get_connection
+from db import record_txn_event
+from .story import router as story_router
 
 
 app = FastAPI(title="FinTech Risk API")
@@ -25,6 +27,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.include_router(story_router)
 
 _dev_otps = {}
 _rate_limit = defaultdict(list)
@@ -133,6 +136,7 @@ def start_2fa(request: TwoFAStartRequest):
         _dev_otps[request.txn_id] = otp
         print(f"DEV OTP txn_id={request.txn_id}: {otp}")
     _send_email(request.account_id, request.txn_id, otp)
+    record_txn_event(request.txn_id, "2FA_SENT", {"account_id": request.account_id, "expires_at": expires_at.isoformat()})
     return {"txn_id": request.txn_id, "status": "PENDING", "expires_at": expires_at}
 
 
@@ -164,6 +168,8 @@ def verify_2fa(request: TwoFAVerifyRequest):
             )
             _set_txn_status(cursor, request.txn_id, "HELD")
             conn.commit()
+            record_txn_event(request.txn_id, "2FA_EXPIRED", {})
+            record_txn_event(request.txn_id, "HELD", {"status": "HELD"})
             return {"txn_id": request.txn_id, "status": "EXPIRED"}
         if hmac.compare_digest(verification["otp_hash"], _hash_otp(request.otp)):
             cursor.execute(
@@ -172,6 +178,8 @@ def verify_2fa(request: TwoFAVerifyRequest):
             )
             _set_txn_status(cursor, request.txn_id, "APPROVED")
             conn.commit()
+            record_txn_event(request.txn_id, "2FA_VERIFIED", {})
+            record_txn_event(request.txn_id, "APPROVED", {"status": "APPROVED"})
             return {"txn_id": request.txn_id, "status": "PASSED"}
 
         attempts = int(verification["attempts"] or 0) + 1
@@ -183,6 +191,9 @@ def verify_2fa(request: TwoFAVerifyRequest):
         if status == "FAILED":
             _set_txn_status(cursor, request.txn_id, "HELD")
         conn.commit()
+        if status == "FAILED":
+            record_txn_event(request.txn_id, "2FA_FAILED", {"attempts": attempts})
+            record_txn_event(request.txn_id, "HELD", {"status": "HELD"})
         return {"txn_id": request.txn_id, "status": status, "attempts": attempts}
     finally:
         cursor.close()
@@ -269,6 +280,8 @@ def review(txn_id: int, request: ReviewRequest):
             (txn_id, request.analyst, request.decision),
         )
         conn.commit()
+        record_txn_event(txn_id, "ANALYST_REVIEW", {"decision": request.decision, "analyst": request.analyst})
+        record_txn_event(txn_id, status, {"status": status})
     finally:
         cursor.close()
         conn.close()

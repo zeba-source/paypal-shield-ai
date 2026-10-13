@@ -1,3 +1,5 @@
+import json
+
 import mysql.connector
 from mysql.connector import Error
 from mysql.connector.pooling import MySQLConnectionPool
@@ -47,6 +49,21 @@ def execute(query, params=None, commit=True):
         if commit:
             conn.commit()
         return cursor.lastrowid or cursor.rowcount
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def record_txn_event(txn_id, stage, detail=None, table_prefix=""):
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            f"INSERT INTO {table_prefix}txn_events (txn_id, stage, detail) VALUES (%s, %s, %s)",
+            (txn_id, stage, json.dumps(detail or {})),
+        )
+        conn.commit()
+        return cursor.lastrowid
     finally:
         cursor.close()
         conn.close()

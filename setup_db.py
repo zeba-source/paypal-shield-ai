@@ -111,6 +111,7 @@ def ensure_transactions_table(conn):
                     `lon` DOUBLE NULL,
                     `country` VARCHAR(50) NULL,
                     `city` VARCHAR(50) NULL,
+                    `scenario` VARCHAR(30) NULL,
                     PRIMARY KEY (`txn_id`)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
                 """
@@ -140,6 +141,7 @@ def ensure_transactions_table(conn):
         "lon": "DOUBLE NULL",
         "country": "VARCHAR(50) NULL",
         "city": "VARCHAR(50) NULL",
+        "scenario": "VARCHAR(30) NULL",
     }.items():
         if not column_exists(conn, "transactions", column_name):
             with conn.cursor() as cur:
@@ -158,6 +160,19 @@ def ensure_transactions_table(conn):
 
 def ensure_other_tables(conn):
     with conn.cursor() as cur:
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS `txn_events` (
+                `id` BIGINT NOT NULL AUTO_INCREMENT,
+                `txn_id` BIGINT NOT NULL,
+                `stage` ENUM('RECEIVED','AGENTS_SCORED','POLICY_DECISION','2FA_SENT','2FA_VERIFIED','2FA_FAILED','2FA_EXPIRED','APPROVED','HELD','BLOCKED','ANALYST_REVIEW') NOT NULL,
+                `detail` JSON NULL,
+                `created_at` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+                PRIMARY KEY (`id`),
+                INDEX `idx_txn_events_txn_created` (`txn_id`, `created_at`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+            """
+        )
         cur.execute(
             """
             CREATE TABLE IF NOT EXISTS `account_profiles` (

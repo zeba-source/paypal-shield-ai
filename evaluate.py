@@ -12,7 +12,7 @@ from orchestrator import RiskOrchestrator
 from producer import build_event_payload
 
 PREFIX = "eval_"
-TABLES = ("transactions", "account_profiles", "risk_alerts", "txn_status")
+TABLES = ("transactions", "account_profiles", "risk_alerts", "txn_status", "txn_events")
 
 
 def setup_evaluation_tables(reset=False):

@@ -4,7 +4,7 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from agents.frequency_agent import FrequencyAgent
 from agents.geo_agent import GeoAgent
 from agents.time_agent import TimeAgent
-from db import get_connection
+from db import get_connection, record_txn_event
 from policy import decide
 
 
@@ -29,6 +29,7 @@ class RiskOrchestrator:
     def process(self, txn: dict) -> dict:
         agent_results = self._evaluate_agents(txn)
         scores = {name: result["score"] for name, result in agent_results.items()}
+        record_txn_event(txn["txn_id"], "AGENTS_SCORED", {"scores": scores, "agents": agent_results}, self.table_prefix)
         final_score, action = decide(scores)
         reasons = [
             reason
@@ -44,7 +45,10 @@ class RiskOrchestrator:
             "action": action,
             "reasons": reasons,
         }
+        record_txn_event(txn["txn_id"], "POLICY_DECISION", {"final_score": final_score, "action": action, "scores": scores}, self.table_prefix)
         self._persist_decision(decision)
+        if action != "REQUEST_2FA":
+            record_txn_event(txn["txn_id"], {"APPROVED": "APPROVED", "HELD": "HELD", "BLOCKED": "BLOCKED"}[ACTION_STATUS[action]], {"action": action, "final_score": final_score}, self.table_prefix)
         self._update_profiles(txn)
         return decision
 
