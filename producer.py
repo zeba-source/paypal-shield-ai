@@ -11,7 +11,7 @@ producer = KafkaProducer(
 
 # Read CSV File
 file_path = 'small_dataset.csv'
-df = pd.read_csv("C:\kafka-project\small_dataset.csv")
+df = pd.read_csv("small_dataset.csv")
 
 # Stream rows one-by-one
 for index, row in df.iterrows():
