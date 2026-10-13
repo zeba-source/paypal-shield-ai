@@ -14,6 +14,9 @@ class TimeAgent:
     NIGHT_HISTORY_LIMIT = 0.05
     MIN_PROFILE_TRANSACTIONS = 10
 
+    def __init__(self, table_prefix=""):
+        self.profiles_table = f"{table_prefix}account_profiles"
+
     def evaluate(self, txn: dict) -> dict:
         account_id = txn.get("nameOrig")
         event_time = self._event_time(txn.get("event_time"))
@@ -90,7 +93,7 @@ class TimeAgent:
         try:
             cursor = conn.cursor(dictionary=True)
             cursor.execute(
-                "SELECT hour_histogram, avg_amount, txn_count FROM account_profiles WHERE account_id = %s FOR UPDATE",
+                f"SELECT hour_histogram, avg_amount, txn_count FROM {self.profiles_table} WHERE account_id = %s FOR UPDATE",
                 (account_id,),
             )
             profile = cursor.fetchone()
@@ -101,8 +104,8 @@ class TimeAgent:
             new_count = txn_count + 1
             new_average = ((average * txn_count) + amount) / new_count
             cursor.execute(
-                """
-                INSERT INTO account_profiles (
+                f"""
+                INSERT INTO {self.profiles_table} (
                     account_id, hour_histogram, avg_amount, txn_count, last_txn_time
                 ) VALUES (%s, %s, %s, %s, %s)
                 ON DUPLICATE KEY UPDATE
@@ -130,7 +133,7 @@ class TimeAgent:
         try:
             cursor = conn.cursor(dictionary=True)
             cursor.execute(
-                "SELECT hour_histogram, avg_amount, txn_count FROM account_profiles WHERE account_id = %s",
+                f"SELECT hour_histogram, avg_amount, txn_count FROM {self.profiles_table} WHERE account_id = %s",
                 (account_id,),
             )
             return cursor.fetchone()

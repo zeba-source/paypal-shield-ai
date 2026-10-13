@@ -7,6 +7,9 @@ from db import get_connection
 class FrequencyAgent:
     """Score transaction frequency and pass-through behaviour from MySQL history."""
 
+    def __init__(self, table_prefix=""):
+        self.transactions_table = f"{table_prefix}transactions"
+
     def evaluate(self, txn: dict) -> dict:
         txn_id = txn.get("txn_id")
         event_time = self._event_time(txn.get("event_time"))
@@ -58,9 +61,9 @@ class FrequencyAgent:
         try:
             cursor = conn.cursor(dictionary=True)
             cursor.execute(
-                """
+                f"""
                 SELECT txn_id, event_time, amount, nameOrig, nameDest
-                FROM transactions
+                FROM {self.transactions_table}
                 WHERE event_time >= %s
                   AND event_time <= %s
                   AND txn_id <> %s

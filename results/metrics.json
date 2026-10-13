@@ -1,0 +1,14 @@
+{
+  "count": 1000,
+  "precision": 0.009,
+  "recall": 1.0,
+  "f1": 0.017839444995044598,
+  "false_positive_rate": 1.0,
+  "average_latency_ms": 16.271536100714002,
+  "confusion_matrix": {
+    "true_positive": 9,
+    "false_positive": 991,
+    "false_negative": 0,
+    "true_negative": 0
+  }
+}

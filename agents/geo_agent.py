@@ -18,6 +18,9 @@ class GeoAgent:
     HOME_DISTANCE_KM = 500.0
     MAX_TRUSTED_LOCATIONS = 5
 
+    def __init__(self, table_prefix=""):
+        self.profiles_table = f"{table_prefix}account_profiles"
+
     def evaluate(self, txn: dict) -> dict:
         account_id = txn.get("nameOrig")
         current = self._location(txn)
@@ -91,7 +94,7 @@ class GeoAgent:
         try:
             cursor = conn.cursor(dictionary=True)
             cursor.execute(
-                "SELECT * FROM account_profiles WHERE account_id = %s FOR UPDATE",
+                f"SELECT * FROM {self.profiles_table} WHERE account_id = %s FOR UPDATE",
                 (account_id,),
             )
             profile = cursor.fetchone()
@@ -105,8 +108,8 @@ class GeoAgent:
             home_lat = home.get("home_lat") if home.get("home_lat") is not None else current["lat"]
             home_lon = home.get("home_lon") if home.get("home_lon") is not None else current["lon"]
             cursor.execute(
-                """
-                INSERT INTO account_profiles (
+                f"""
+                INSERT INTO {self.profiles_table} (
                     account_id, home_city, home_country, home_lat, home_lon,
                     trusted_locations, last_txn_time, last_lat, last_lon, last_city
                 ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
@@ -145,7 +148,7 @@ class GeoAgent:
         conn = get_connection()
         try:
             cursor = conn.cursor(dictionary=True)
-            cursor.execute("SELECT * FROM account_profiles WHERE account_id = %s", (account_id,))
+            cursor.execute(f"SELECT * FROM {self.profiles_table} WHERE account_id = %s", (account_id,))
             return cursor.fetchone()
         finally:
             cursor.close()

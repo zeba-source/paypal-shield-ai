@@ -18,11 +18,12 @@ ACTION_STATUS = {
 
 
 class RiskOrchestrator:
-    def __init__(self):
+    def __init__(self, table_prefix=""):
+        self.table_prefix = table_prefix
         self.agents = {
-            "frequency": FrequencyAgent(),
-            "time": TimeAgent(),
-            "geo": GeoAgent(),
+            "frequency": FrequencyAgent(table_prefix),
+            "time": TimeAgent(table_prefix),
+            "geo": GeoAgent(table_prefix),
         }
 
     def process(self, txn: dict) -> dict:
@@ -77,8 +78,8 @@ class RiskOrchestrator:
             if decision["action"] != "ALLOW":
                 scores = decision["scores"]
                 cursor.execute(
-                    """
-                    INSERT INTO risk_alerts (
+                    f"""
+                    INSERT INTO {self.table_prefix}risk_alerts (
                         txn_id, account_id, frequency_score, time_score, geo_score,
                         final_score, action, reasons
                     ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
@@ -91,8 +92,8 @@ class RiskOrchestrator:
                     ),
                 )
             cursor.execute(
-                """
-                INSERT INTO txn_status (txn_id, status)
+                f"""
+                INSERT INTO {self.table_prefix}txn_status (txn_id, status)
                 VALUES (%s, %s)
                 ON DUPLICATE KEY UPDATE status = VALUES(status), updated_at = CURRENT_TIMESTAMP
                 """,
