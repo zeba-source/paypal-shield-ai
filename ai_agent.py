@@ -69,6 +69,31 @@ latitude
 longitude
 
 Convert the user's question into ONE MySQL SELECT query.
+# ==============================
+# START AI AGENT
+# ==============================
+if __name__ == "__main__":
+    print("MySQL + Ollama connected")
+    print("FinTech AI Agent - type 'exit' to stop.")
+    while True:
+        question = input("You: ")
+        if question.lower() == "exit":
+            break
+        try:
+            sql = generate_sql(question)
+            print("\nGenerated SQL:")
+            print(sql)
+            if not sql.upper().startswith("SELECT"):
+                print("Only SELECT queries are allowed.")
+                continue
+            columns, results = execute_sql(sql)
+            print("\nResult:")
+            print(columns)
+            for row in results:
+                print(row)
+        except Exception as exc:
+            print("\nError:")
+            print(exc)
 
 Rules:
 - Return ONLY SQL.
