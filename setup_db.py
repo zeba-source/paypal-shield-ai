@@ -232,6 +232,7 @@ def ensure_other_tables(conn):
                 `txn_id` BIGINT NOT NULL,
                 `account_id` VARCHAR(50) NULL,
                 `otp_hash` VARCHAR(255) NULL,
+                `dev_otp` VARCHAR(6) NULL,
                 `status` ENUM('PENDING','PASSED','FAILED','EXPIRED') DEFAULT 'PENDING',
                 `attempts` INT DEFAULT 0,
                 `expires_at` DATETIME NULL,
@@ -241,6 +242,13 @@ def ensure_other_tables(conn):
             """
         )
 
+    if not column_exists(conn, "verification_requests", "dev_otp"):
+        with conn.cursor() as cur:
+            cur.execute(
+                "ALTER TABLE `verification_requests` ADD COLUMN `dev_otp` VARCHAR(6) NULL"
+            )
+
+    with conn.cursor() as cur:
         cur.execute(
             """
             CREATE TABLE IF NOT EXISTS `txn_status` (

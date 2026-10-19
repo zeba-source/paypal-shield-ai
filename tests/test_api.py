@@ -29,6 +29,11 @@ def api_client():
     conn = get_connection()
     cursor = conn.cursor()
     try:
+        cursor.execute(
+            "DELETE FROM txn_events WHERE txn_id IN "
+            "(SELECT txn_id FROM transactions WHERE nameOrig LIKE %s)",
+            (f"{PREFIX}%",),
+        )
         cursor.execute("DELETE FROM transactions WHERE nameOrig LIKE %s", (f"{PREFIX}%",))
         cursor.execute("DELETE FROM verification_requests WHERE account_id LIKE %s", (f"{PREFIX}%",))
         cursor.execute("DELETE FROM risk_alerts WHERE account_id LIKE %s", (f"{PREFIX}%",))
@@ -44,6 +49,11 @@ def api_client():
     conn = get_connection()
     cursor = conn.cursor()
     try:
+        cursor.execute(
+            "DELETE FROM txn_events WHERE txn_id IN "
+            "(SELECT txn_id FROM transactions WHERE nameOrig LIKE %s)",
+            (f"{PREFIX}%",),
+        )
         cursor.execute("DELETE FROM transactions WHERE nameOrig LIKE %s", (f"{PREFIX}%",))
         cursor.execute("DELETE FROM verification_requests WHERE account_id LIKE %s", (f"{PREFIX}%",))
         cursor.execute("DELETE FROM risk_alerts WHERE account_id LIKE %s", (f"{PREFIX}%",))
@@ -66,6 +76,20 @@ def create_txn(account_id):
         conn.close()
 
 
+def fetch_txn_state(txn_id):
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT status FROM txn_status WHERE txn_id = %s", (txn_id,))
+        status = cursor.fetchone()["status"]
+        cursor.execute("SELECT stage FROM txn_events WHERE txn_id = %s", (txn_id,))
+        stages = {row["stage"] for row in cursor.fetchall()}
+        return status, stages
+    finally:
+        cursor.close()
+        conn.close()
+
+
 def test_correct_otp(api_client):
     txn_id = create_txn(f"{PREFIX}CORRECT")
     response = api_client.post("/2fa/start", json={"txn_id": txn_id, "account_id": f"{PREFIX}CORRECT"})
@@ -75,6 +99,9 @@ def test_correct_otp(api_client):
     response = api_client.post("/2fa/verify", json={"txn_id": txn_id, "otp": otp})
     assert response.status_code == 200
     assert response.json()["status"] == "PASSED"
+    status, stages = fetch_txn_state(txn_id)
+    assert status == "APPROVED"
+    assert "2FA_VERIFIED" in stages
 
 
 def test_wrong_otp_three_times_holds_transaction(api_client):
@@ -86,6 +113,9 @@ def test_wrong_otp_three_times_holds_transaction(api_client):
         for _ in range(3)
     ]
     assert [response.json()["status"] for response in responses] == ["PENDING", "PENDING", "FAILED"]
+    status, stages = fetch_txn_state(txn_id)
+    assert status == "HELD"
+    assert {"2FA_FAILED", "HELD"}.issubset(stages)
 
 
 def test_expired_otp_is_held(api_client):
@@ -106,6 +136,65 @@ def test_expired_otp_is_held(api_client):
     response = api_client.post("/2fa/verify", json={"txn_id": txn_id, "otp": "000000"})
     assert response.status_code == 200
     assert response.json()["status"] == "EXPIRED"
+    assert api_client.get("/pending-2fa").json() == []
+    status, stages = fetch_txn_state(txn_id)
+    assert status == "HELD"
+    assert {"2FA_EXPIRED", "HELD"}.issubset(stages)
+
+
+def test_full_2fa_flow(api_client):
+    passed_txn = create_txn(f"{PREFIX}FULL_PASS")
+    response = api_client.post(
+        "/2fa/start",
+        json={"txn_id": passed_txn, "account_id": f"{PREFIX}FULL_PASS"},
+    )
+    assert response.status_code == 200
+    otp = api_client.get(f"/dev/otp/{passed_txn}").json()["otp"]
+    response = api_client.post(
+        "/2fa/verify", json={"txn_id": passed_txn, "otp": otp}
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == "PASSED"
+    assert fetch_txn_state(passed_txn)[0] == "APPROVED"
+
+    failed_txn = create_txn(f"{PREFIX}FULL_FAIL")
+    api_client.post(
+        "/2fa/start",
+        json={"txn_id": failed_txn, "account_id": f"{PREFIX}FULL_FAIL"},
+    )
+    responses = [
+        api_client.post(
+            "/2fa/verify", json={"txn_id": failed_txn, "otp": "000000"}
+        )
+        for _ in range(3)
+    ]
+    assert [response.json()["status"] for response in responses] == [
+        "PENDING", "PENDING", "FAILED"
+    ]
+    assert fetch_txn_state(failed_txn)[0] == "HELD"
+
+    expired_txn = create_txn(f"{PREFIX}FULL_EXPIRED")
+    api_client.post(
+        "/2fa/start",
+        json={"txn_id": expired_txn, "account_id": f"{PREFIX}FULL_EXPIRED"},
+    )
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "UPDATE verification_requests SET expires_at = %s WHERE txn_id = %s",
+            (datetime.now(UTC).replace(tzinfo=None) - timedelta(minutes=1), expired_txn),
+        )
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+    response = api_client.post(
+        "/2fa/verify", json={"txn_id": expired_txn, "otp": "000000"}
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == "EXPIRED"
+    assert fetch_txn_state(expired_txn)[0] == "HELD"
 
 
 def test_review_updates_status_and_log(api_client):

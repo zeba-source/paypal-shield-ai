@@ -64,14 +64,24 @@ def insert_transaction(data):
 
 
 def notify_2fa(txn_id, account_id):
-    try:
-        requests.post(
-            f"{API_URL}/2fa/start",
-            json={"txn_id": txn_id, "account_id": account_id},
-            timeout=0.25,
-        )
-    except requests.RequestException as exc:
-        print(f"2FA notification unavailable: {exc}")
+    for attempt in range(1, 4):
+        try:
+            response = requests.post(
+                f"{API_URL}/2fa/start",
+                json={"txn_id": txn_id, "account_id": account_id},
+                timeout=0.25,
+            )
+            response.raise_for_status()
+            return
+        except requests.RequestException as exc:
+            error_response = getattr(exc, "response", None)
+            print(
+                f"2FA notification failed attempt={attempt} txn_id={txn_id} "
+                f"status_code={getattr(error_response, 'status_code', None)} "
+                f"body={getattr(error_response, 'text', '') or exc}"
+            )
+            if attempt < 3:
+                time.sleep(1)
 
 
 def main():

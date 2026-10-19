@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import hmac
 import json
@@ -6,6 +7,7 @@ import secrets
 import smtplib
 import time
 from collections import defaultdict
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from email.message import EmailMessage
 from typing import Literal
@@ -20,17 +22,6 @@ from db import record_txn_event
 from .story import router as story_router
 
 
-app = FastAPI(title="FinTech Risk API")
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000", "*"],
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-app.include_router(story_router)
-
-_dev_otps = {}
 _rate_limit = defaultdict(list)
 
 
@@ -107,6 +98,64 @@ def _latest_verification(cursor, txn_id):
     return cursor.fetchone()
 
 
+def _expire_pending_verifications():
+    conn = get_connection()
+    expired_txn_ids = []
+    try:
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute(
+            "SELECT id, txn_id FROM verification_requests "
+            "WHERE status = 'PENDING' AND expires_at <= UTC_TIMESTAMP()"
+        )
+        for row in cursor.fetchall():
+            cursor.execute(
+                "UPDATE verification_requests SET status = 'EXPIRED' "
+                "WHERE id = %s AND status = 'PENDING'",
+                (row["id"],),
+            )
+            if cursor.rowcount:
+                _set_txn_status(cursor, row["txn_id"], "HELD")
+                expired_txn_ids.append(row["txn_id"])
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+    for txn_id in expired_txn_ids:
+        record_txn_event(txn_id, "2FA_EXPIRED", {})
+        record_txn_event(txn_id, "HELD", {"status": "HELD"})
+    return len(expired_txn_ids)
+
+
+async def _expire_pending_loop():
+    while True:
+        try:
+            _expire_pending_verifications()
+        except Exception as exc:
+            print(f"Pending 2FA expiry sweep failed: {exc}")
+        await asyncio.sleep(30)
+
+
+@asynccontextmanager
+async def lifespan(_app):
+    expiry_task = asyncio.create_task(_expire_pending_loop())
+    try:
+        yield
+    finally:
+        expiry_task.cancel()
+        await asyncio.gather(expiry_task, return_exceptions=True)
+
+
+app = FastAPI(title="FinTech Risk API", lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000", "*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+app.include_router(story_router)
+
+
 @app.post("/2fa/start")
 def start_2fa(request: TwoFAStartRequest):
     otp = f"{secrets.randbelow(900000) + 100000:06d}"
@@ -117,10 +166,10 @@ def start_2fa(request: TwoFAStartRequest):
         cursor.execute(
             """
             INSERT INTO verification_requests
-                (txn_id, account_id, otp_hash, status, attempts, expires_at)
-            VALUES (%s, %s, %s, 'PENDING', 0, %s)
+                (txn_id, account_id, otp_hash, dev_otp, status, attempts, expires_at)
+            VALUES (%s, %s, %s, %s, 'PENDING', 0, %s)
             """,
-            (request.txn_id, request.account_id, _hash_otp(otp), expires_at),
+            (request.txn_id, request.account_id, _hash_otp(otp), otp if DEV_MODE else None, expires_at),
         )
         cursor.execute(
             """
@@ -134,7 +183,6 @@ def start_2fa(request: TwoFAStartRequest):
         cursor.close()
         conn.close()
     if DEV_MODE:
-        _dev_otps[request.txn_id] = otp
         print(f"DEV OTP txn_id={request.txn_id}: {otp}")
     _send_email(request.account_id, request.txn_id, otp)
     record_txn_event(request.txn_id, "2FA_SENT", {"account_id": request.account_id, "expires_at": expires_at.isoformat()})
@@ -145,23 +193,13 @@ def start_2fa(request: TwoFAStartRequest):
 def dev_otp(txn_id: int):
     if not DEV_MODE:
         raise HTTPException(status_code=404, detail="Not found")
-    otp = _dev_otps.get(txn_id)
-    if otp is None:
-        conn = get_connection()
-        try:
-            cursor = conn.cursor(dictionary=True)
-            verification = _latest_verification(cursor, txn_id)
-            if verification and verification["status"] == "PENDING":
-                otp = f"{secrets.randbelow(900000) + 100000:06d}"
-                cursor.execute(
-                    "UPDATE verification_requests SET otp_hash = %s WHERE id = %s",
-                    (_hash_otp(otp), verification["id"]),
-                )
-                conn.commit()
-                _dev_otps[txn_id] = otp
-        finally:
-            cursor.close()
-            conn.close()
+    verification = _execute(
+        "SELECT dev_otp FROM verification_requests "
+        "WHERE txn_id = %s AND status = 'PENDING' AND expires_at > UTC_TIMESTAMP() "
+        "ORDER BY id DESC LIMIT 1",
+        (txn_id,), dictionary=True, fetchone=True,
+    )
+    otp = verification["dev_otp"] if verification else None
     if otp is None:
         raise HTTPException(status_code=404, detail="OTP not found")
     return {"txn_id": txn_id, "otp": otp}
@@ -292,7 +330,9 @@ def stats():
 @app.get("/pending-2fa")
 def pending_2fa():
     return _execute(
-        "SELECT * FROM verification_requests WHERE status = 'PENDING' ORDER BY created_at DESC",
+        "SELECT * FROM verification_requests "
+        "WHERE status = 'PENDING' AND expires_at > UTC_TIMESTAMP() "
+        "ORDER BY created_at DESC",
         dictionary=True,
     )
 
