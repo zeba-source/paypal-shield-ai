@@ -1,4 +1,5 @@
 import argparse
+from pathlib import Path
 
 import mysql.connector
 from mysql.connector import Error
@@ -173,6 +174,7 @@ def ensure_other_tables(conn):
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
             """
         )
+
         cur.execute(
             """
             CREATE TABLE IF NOT EXISTS `account_profiles` (
@@ -196,17 +198,12 @@ def ensure_other_tables(conn):
 
     if not column_exists(conn, "account_profiles", "trusted_locations"):
         with conn.cursor() as cur:
-            cur.execute(
-                "ALTER TABLE `account_profiles` ADD COLUMN `trusted_locations` JSON NULL"
-            )
+            cur.execute("ALTER TABLE `account_profiles` ADD COLUMN `trusted_locations` JSON NULL")
     if not column_exists(conn, "account_profiles", "last_city"):
         with conn.cursor() as cur:
-            cur.execute(
-                "ALTER TABLE `account_profiles` ADD COLUMN `last_city` VARCHAR(50) NULL"
-            )
+            cur.execute("ALTER TABLE `account_profiles` ADD COLUMN `last_city` VARCHAR(50) NULL")
 
     with conn.cursor() as cur:
-
         cur.execute(
             """
             CREATE TABLE IF NOT EXISTS `risk_alerts` (
@@ -224,7 +221,6 @@ def ensure_other_tables(conn):
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
             """
         )
-
         cur.execute(
             """
             CREATE TABLE IF NOT EXISTS `verification_requests` (
@@ -241,14 +237,6 @@ def ensure_other_tables(conn):
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
             """
         )
-
-    if not column_exists(conn, "verification_requests", "dev_otp"):
-        with conn.cursor() as cur:
-            cur.execute(
-                "ALTER TABLE `verification_requests` ADD COLUMN `dev_otp` VARCHAR(6) NULL"
-            )
-
-    with conn.cursor() as cur:
         cur.execute(
             """
             CREATE TABLE IF NOT EXISTS `txn_status` (
@@ -259,7 +247,6 @@ def ensure_other_tables(conn):
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
             """
         )
-
         cur.execute(
             """
             CREATE TABLE IF NOT EXISTS `review_log` (
@@ -272,6 +259,21 @@ def ensure_other_tables(conn):
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
             """
         )
+
+    if not column_exists(conn, "verification_requests", "dev_otp"):
+        with conn.cursor() as cur:
+            cur.execute("ALTER TABLE `verification_requests` ADD COLUMN `dev_otp` VARCHAR(6) NULL")
+
+    apply_paypal_migration(conn)
+
+
+def apply_paypal_migration(conn):
+    sql_dir = Path(__file__).resolve().parent / "sql"
+    with conn.cursor() as cur:
+        for migration_path in sorted(sql_dir.glob("*.sql")):
+            for statement in migration_path.read_text(encoding="utf-8").split(";"):
+                if statement.strip():
+                    cur.execute(statement)
 
 
 def reset_transactions_if_requested(conn, reset: bool):

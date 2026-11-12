@@ -1,6 +1,6 @@
-import type { Action, Alert, AgentName, CaseSummary, DemoResult, GeoStory, LiveLocation, Pending2FA, Stats, StoryActions, StoryAgents, StoryAmount, StoryCase, StoryHourly, StoryMetrics, StoryOverview } from "@/lib/types";
+import type { Action, Alert, AgentName, CaseSummary, CheckoutCreateResponse, CheckoutDecisionResponse, CheckoutDemoOverride, CheckoutStatus, DemoResult, GeoStory, Investigation, LiveLocation, Pending2FA, Stats, StoryActions, StoryAgents, StoryAmount, StoryCase, StoryHourly, StoryMetrics, StoryOverview } from "@/lib/types";
 
-export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_URL}${path}`, { ...init, cache: "no-store" });
@@ -29,6 +29,10 @@ export const api = {
   devOtp: (txnId: number) => request<{ otp: string }>(`/dev/otp/${txnId}`),
   demo: (name: "mule" | "night" | "travel") => request<DemoResult>(`/demo/scenario/${name}`, { method: "POST" }),
   resetDemo: () => request<{ status: string }>("/demo/reset-demo-accounts", { method: "POST" }),
+  createCheckoutOrder: (amount: number, description: string, demo?: CheckoutDemoOverride) => request<CheckoutCreateResponse>("/checkout/create-order", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ amount, description, ...(demo ? { demo } : {}) }) }),
+  authorizeCheckout: (orderId: string) => request<CheckoutDecisionResponse>("/checkout/authorize", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ order_id: orderId }) }),
+  checkoutStatus: (orderId: string) => request<CheckoutStatus>(`/checkout/${encodeURIComponent(orderId)}/status`),
+  investigate: (txnId: number) => request<Investigation>(`/investigate/${txnId}`, { method: "POST" }),
 };
 
 export type { Action, AgentName };

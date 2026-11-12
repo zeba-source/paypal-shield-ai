@@ -19,6 +19,8 @@ from pydantic import BaseModel, Field
 from config import DEV_MODE
 from db import get_connection
 from db import record_txn_event
+from .checkout import router as checkout_router
+from .investigator import router as investigator_router
 from .story import router as story_router
 
 
@@ -33,6 +35,11 @@ class TwoFAStartRequest(BaseModel):
 class TwoFAVerifyRequest(BaseModel):
     txn_id: int
     otp: str = Field(pattern=r"^\d{6}$")
+
+
+class WebAuthnVerifyRequest(BaseModel):
+    txn_id: int
+    assertion: dict = Field(default_factory=dict)
 
 
 class ReviewRequest(BaseModel):
@@ -123,6 +130,8 @@ def _expire_pending_verifications():
     for txn_id in expired_txn_ids:
         record_txn_event(txn_id, "2FA_EXPIRED", {})
         record_txn_event(txn_id, "HELD", {"status": "HELD"})
+        from .checkout import fail_paypal_2fa
+        fail_paypal_2fa(txn_id)
     return len(expired_txn_ids)
 
 
@@ -154,6 +163,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(story_router)
+app.include_router(checkout_router)
+app.include_router(investigator_router)
 
 
 @app.post("/2fa/start")
@@ -225,6 +236,8 @@ def verify_2fa(request: TwoFAVerifyRequest):
             conn.commit()
             record_txn_event(request.txn_id, "2FA_EXPIRED", {})
             record_txn_event(request.txn_id, "HELD", {"status": "HELD"})
+            from .checkout import fail_paypal_2fa
+            fail_paypal_2fa(request.txn_id)
             return {"txn_id": request.txn_id, "status": "EXPIRED"}
         if hmac.compare_digest(verification["otp_hash"], _hash_otp(request.otp)):
             cursor.execute(
@@ -235,7 +248,9 @@ def verify_2fa(request: TwoFAVerifyRequest):
             conn.commit()
             record_txn_event(request.txn_id, "2FA_VERIFIED", {})
             record_txn_event(request.txn_id, "APPROVED", {"status": "APPROVED"})
-            return {"txn_id": request.txn_id, "status": "PASSED"}
+            from .checkout import complete_paypal_2fa
+            payment = complete_paypal_2fa(request.txn_id)
+            return {"txn_id": request.txn_id, "status": "PASSED", **(payment or {})}
 
         attempts = int(verification["attempts"] or 0) + 1
         status = "FAILED" if attempts >= 3 else "PENDING"
@@ -249,10 +264,40 @@ def verify_2fa(request: TwoFAVerifyRequest):
         if status == "FAILED":
             record_txn_event(request.txn_id, "2FA_FAILED", {"attempts": attempts})
             record_txn_event(request.txn_id, "HELD", {"status": "HELD"})
+            from .checkout import fail_paypal_2fa
+            fail_paypal_2fa(request.txn_id)
         return {"txn_id": request.txn_id, "status": status, "attempts": attempts}
     finally:
         cursor.close()
         conn.close()
+
+
+@app.post("/2fa/webauthn/auth/verify")
+def verify_webauthn(request: WebAuthnVerifyRequest):
+    if not request.assertion:
+        raise HTTPException(status_code=400, detail="WebAuthn assertion is required")
+    conn = get_connection()
+    try:
+        cursor = conn.cursor(dictionary=True)
+        verification = _latest_verification(cursor, request.txn_id)
+        if verification is None:
+            raise HTTPException(status_code=404, detail="Verification request not found")
+        if verification["status"] != "PENDING":
+            raise HTTPException(status_code=409, detail=f"Verification is {verification['status']}")
+        cursor.execute(
+            "UPDATE verification_requests SET status = 'PASSED' WHERE id = %s",
+            (verification["id"],),
+        )
+        _set_txn_status(cursor, request.txn_id, "APPROVED")
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+    record_txn_event(request.txn_id, "2FA_VERIFIED", {"method": "webauthn"})
+    record_txn_event(request.txn_id, "APPROVED", {"status": "APPROVED", "method": "webauthn"})
+    from .checkout import complete_paypal_2fa
+    payment = complete_paypal_2fa(request.txn_id)
+    return {"txn_id": request.txn_id, "status": "PASSED", **(payment or {})}
 
 
 def _set_txn_status(cursor, txn_id, status):
@@ -382,4 +427,6 @@ def review(txn_id: int, request: ReviewRequest):
     finally:
         cursor.close()
         conn.close()
-    return {"txn_id": txn_id, "status": status, "analyst": request.analyst}
+    from .checkout import handle_paypal_review
+    payment = handle_paypal_review(txn_id, request.decision)
+    return {"txn_id": txn_id, "status": status, "analyst": request.analyst, **(payment or {})}

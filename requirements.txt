@@ -10,3 +10,4 @@ pandas
 numpy
 pytest
 httpx2
+httpx

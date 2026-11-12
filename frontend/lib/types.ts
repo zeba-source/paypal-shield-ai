@@ -1,5 +1,11 @@
 export type Action = "ALLOW" | "REQUEST_2FA" | "HOLD_FOR_REVIEW" | "BLOCK";
 export type AgentName = "frequency" | "time" | "geo";
+export type PaymentStatus = "CREATED" | "AUTHORIZED" | "PENDING_2FA" | "PENDING_REVIEW" | "CAPTURED" | "VOIDED" | "FAILED";
+export interface CheckoutDemoOverride { event_time?: string; country?: string; amount_multiplier?: number }
+export interface CheckoutCreateResponse { order_id: string }
+export interface CheckoutDecisionResponse { txn_id: number; payment_status: PaymentStatus; decision: Action; scores: Record<AgentName, number>; reasons: string[]; methods: string[] }
+export interface CheckoutStatus { id: number; txn_id: number | null; paypal_order_id: string; authorization_id: string | null; capture_id: string | null; payer_id: string | null; payment_status: PaymentStatus; amount: number; currency: string }
+export interface Investigation { txn_id: number; summary: string; key_evidence: string[]; recommended_action: "APPROVE" | "REQUEST_MORE_INFO" | "BLOCK"; confidence: number; source: "template" | "llm"; model: string }
 
 export interface StoryOverview {
   total: number;

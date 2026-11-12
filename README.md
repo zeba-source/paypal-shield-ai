@@ -1,172 +1,131 @@
-# FinTech Fraud Detection Demo
+# PayPal Shield AI
 
-A local real-time fraud detection demo using Kafka, MySQL, deterministic rule-based agents, FastAPI, and Streamlit.
+PayPal Shield AI is a real PayPal Sandbox payment flow with a deterministic fraud-risk engine inside it: a buyer checks out in the Shop, PayPal authorizes the order, three independent agents score the payment, and a fixed policy decides whether to capture, request 2FA, hold for review, or void. An advisory investigator can summarize evidence for an analyst, but it never changes policy and never moves money.
+
+## Screenshots
+
+Add submission screenshots here:
+
+- `docs/screenshots/shop.png` - PayPal Sandbox shop and risk result
+- `docs/screenshots/live.png` - Live event ledger and analyst queue
+- `docs/screenshots/story.png` - Risk story and detector explanation
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    P[Producer or scenario_injector.py] --> KT[(Kafka transactions-topic)]
-    KT --> RC[risk_consumer.py]
-    RC --> DB[(MySQL fintech_db)]
-    RC --> O[RiskOrchestrator]
-    O --> F[FrequencyAgent]
-    O --> T[TimeAgent]
-    O --> G[GeoAgent]
-    O --> PE[Deterministic policy.py]
-    O --> KR[(Kafka risk-decisions-topic)]
-    API[FastAPI api/main.py] --> DB
-    UI[Streamlit dashboard.py] --> API
-    UI --> DB
+    SHOP[Shop / PayPal Buttons] --> API[FastAPI checkout API]
+    API --> ORDERS[PayPal Orders v2\nintent=AUTHORIZE]
+    API --> RISK[Risk Orchestrator]
+    RISK --> F[Frequency agent]
+    RISK --> T[Time agent]
+    RISK --> G[Geo agent]
+    F --> POLICY[Deterministic policy.py]
+    T --> POLICY
+    G --> POLICY
+    POLICY --> CAPTURE[Payments v2 capture]
+    POLICY --> TWOFA[2FA]
+    POLICY --> HOLD[Analyst review]
+    POLICY --> VOID[Payments v2 void]
+    API --> DB[(MySQL 8.0)]
+    INVESTIGATOR[LLM investigator\nadvisory only] -. evidence summary .-> HOLD
+    STREAM[Optional PaySim producer] --> KAFKA[(Kafka)] --> CONSUMER[Optional risk_consumer]
+    CONSUMER --> RISK
 ```
 
-`risk_consumer.py` is the single transaction writer. Do not run the legacy `consumer.py` at the same time.
+## Judge Setup
 
-## Prerequisites
+1. Install Python dependencies: `..\.venv\Scripts\python.exe -m pip install -r requirements.txt`.
+2. Install frontend dependencies: `Set-Location frontend; npm install`.
+3. Create `.env` from `.env.example`; keep PayPal client credentials and LLM keys only in `.env`.
+4. Create a PayPal Developer Sandbox app and record its client ID and secret. Create or use the default Sandbox buyer and business accounts.
+5. Set `PAYPAL_MODE=sandbox`, `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `MYSQL_*`, `DEV_MODE=true`, and `LITE_MODE=true`. Set `DEMO_HOME_COUNTRY` and, when available, `DEMO_BUYER_PAYER_ID` for the seeded buyer profile.
+6. Initialize MySQL: `..\.venv\Scripts\python.exe setup_db.py`.
+7. Seed the buyer baseline: `..\.venv\Scripts\python.exe scripts\seed_demo_profiles.py --reset`.
+8. Start the Kafka-free path: `powershell -ExecutionPolicy Bypass -File .\start_lite.ps1`.
+9. Open `http://localhost:3000/shop`, choose a product, and use the PayPal Sandbox buyer login in the approval popup. API docs are at `http://localhost:8000/docs`.
 
-- Windows PowerShell
-- Python virtual environment at `..\.venv`
-- MySQL 8.0 with the credentials in `.env`
-- Kafka 3.9.1 in ZooKeeper mode at `C:\kafka\kafka`
-- ZooKeeper on port `2181`, Kafka on port `9092`
+For the optional PaySim stream, set `LITE_MODE=false`, start Kafka/ZooKeeper, and use `start_all.ps1`. The stream is not required for the PayPal checkout path.
 
-Install dependencies:
+## PayPal APIs Used
 
-```powershell
-..\.venv\Scripts\python.exe -m pip install -r requirements.txt
-```
+| API | Endpoint | Purpose |
+|---|---|---|
+| OAuth 2.0 | `POST /v1/oauth2/token` | Obtain a Sandbox access token |
+| Orders v2 | `POST /v2/checkout/orders` | Create an order with `intent=AUTHORIZE` |
+| Orders v2 | `GET /v2/checkout/orders/{id}` | Read order and approval details |
+| Orders v2 | `POST /v2/checkout/orders/{id}/authorize` | Authorize the buyer-approved order |
+| Payments v2 | `GET /v2/payments/authorizations/{id}` | Read authorization state |
+| Payments v2 | `POST /v2/payments/authorizations/{id}/capture` | Capture only after a permitted decision |
+| Payments v2 | `POST /v2/payments/authorizations/{id}/void` | Void blocked or analyst-blocked payments |
 
-Copy `.env.example` to `.env` and set the MySQL password. `DEV_MODE=true` enables the dashboard OTP helper and `GET /dev/otp/{txn_id}`.
+Sandbox base URL: `https://api-m.sandbox.paypal.com`. Currency is USD. Every mutating request uses an idempotency key.
 
-## Start Everything
+## AI Tools
 
-From the `Fintech` folder:
+- The Frequency, Time, and Geo agents are deterministic Python modules with explicit feature calculations.
+- `policy.py` is the only source of payment actions; the LLM never changes an action.
+- `api/investigator.py` can use Gemini or Anthropic when configured with `LLM_PROVIDER` and `LLM_API_KEY`.
+- The investigator receives fixed backend context, treats payer fields as untrusted delimited data, validates strict JSON, retries once, and falls back to a deterministic template when no key is available.
+- `ai_agent.py` remains an evaluation/read-only SQL tool and is not part of real-time payment scoring.
 
-```powershell
-.\start_all.ps1
-```
+## Deterministic Policy Choice
 
-To start the infrastructure, API, consumer, and dashboard without continuously publishing the CSV dataset:
+The policy is deliberately transparent and reproducible. It combines the three scores, then applies fixed thresholds:
 
-```powershell
-.\start_all.ps1 -NoProducer
-```
-
-The script starts ZooKeeper and Kafka only when their ports are not already listening, waits up to 90 seconds for Kafka, initializes the schema and topics, and opens titled windows for the API, risk consumer, frontend, dashboard, and optional producer.
-
-URLs:
-
-- Dashboard: http://localhost:8501
-- API docs: http://localhost:8000/docs
-
-Stop the services:
-
-```powershell
-.\stop_all.ps1
-```
-
-## Dashboard
-
-The Next.js dashboard runs at http://localhost:3000 alongside the API and Kafka services.
-
-- **Story** (`/story`) explains the dataset, baseline activity, three detectors, deterministic policy, a case timeline, and evaluation limits.
-- **Live** (`/live`) is the command center: an SSE event feed with polling fallback, flagged-location map, pending 2FA, and analyst review queue.
-- **Demo** (`/demo`) walks an audience through Mule, Night-time, and Impossible-travel scenarios, including the real agent scores, policy action, OTP flow, and final status.
-
-### Two-minute demo
-
-1. Run `start_all.ps1 -NoProducer` from the `Fintech` folder.
-2. Open http://localhost:3000/demo and choose **Mule account**.
-3. Let the event pipeline reach the 2FA challenge, click **Fetch dev OTP**, and verify it. Repeat with a wrong code three times to show the held path.
-4. Switch to http://localhost:3000/live to show the same events arriving in the command center, then use **Reset demo** before another run.
-
-Screenshots can be added here:
-
-- `docs/screenshots/story.png` - Story page placeholder
-- `docs/screenshots/live.png` - Live command center placeholder
-- `docs/screenshots/demo.png` - Scenario walkthrough placeholder
-
-## Agents
-
-Each transaction is evaluated without using `isFraud` or `isFlaggedFraud` as decision inputs.
-
-- **Frequency agent:** computes 5-minute, 1-hour, and 24-hour incoming/outgoing counts and amounts, unique counterparties, pass-through ratio, time since last credit, balance drain, and rate spikes. A mule pattern is scored highly; frequent activity alone remains low risk.
-- **Time agent:** compares the hour and amount with the account profile. Rare hours add 40, low-history night activity adds 25, amounts above 3x the account average add 25, and a first night transaction adds 10. Cold-start accounts are capped at 60.
-- **Geo agent:** uses Haversine distance and elapsed time for implied speed. Speeds above 900 km/h add 60, a foreign country adds 30, distance over 500 km from home adds 15, and trusted locations reduce risk.
-
-## Policy
-
-The policy is deterministic and contains no LLM decision logic:
-
-`final_score = 0.6 * max(agent_scores) + 0.4 * mean(agent_scores)`
-
-If at least two agents score 60 or higher, 10 points are added, capped at 100.
-
-| Final score | Action | Transaction status |
+| Score | Action | Payment path |
 |---:|---|---|
-| 0-39 | ALLOW | APPROVED |
-| 40-69 | REQUEST_2FA | PENDING_2FA |
-| 70-89 | HOLD_FOR_REVIEW | HELD |
-| 90-100 | BLOCK | BLOCKED |
+| `< 40` | `ALLOW` | Capture |
+| `40-69` | `REQUEST_2FA` | Verify, then capture |
+| `70-89` | `HOLD_FOR_REVIEW` | Analyst approves or blocks |
+| `>= 90` | `BLOCK` | Void authorization |
 
-## 2FA Flow
+This keeps the money-moving decision auditable and prevents a model from silently changing a financial action.
 
-1. A `REQUEST_2FA` decision calls `POST /2fa/start`.
-2. The API generates a six-digit OTP and stores only its SHA-256 hash in `verification_requests`.
-3. OTPs expire after five minutes and allow three incorrect attempts before the transaction is held.
-4. In development mode, the OTP is printed by the API and available through `GET /dev/otp/{txn_id}`.
-5. Submit it to `POST /2fa/verify`; a correct OTP changes the verification to `PASSED` and the transaction to `APPROVED`.
-6. The Streamlit dashboard exposes pending verifications and the development OTP helper.
+## Lite Mode and Stream Mode
 
-## Review Queue
+`LITE_MODE=true` is the recommended PayPal demo path. It requires only MySQL, FastAPI, and the Next.js frontend. `start_lite.ps1` runs `setup_db.py`, the API, and the frontend; it does not start Kafka, ZooKeeper, `risk_consumer.py`, `producer.py`, or Streamlit.
 
-`HOLD_FOR_REVIEW` decisions appear in the dashboard review queue. Analysts can approve or block them, which updates `txn_status` and writes `review_log`.
+Kafka, `risk_consumer.py`, and `producer.py` are optional background infrastructure for the PaySim stream. They are useful for the live event story, but checkout orders are scored directly by the API and do not depend on Kafka.
 
-## Demo Scenarios
+## Sandbox E2E Script
 
-With Kafka, the API, and `risk_consumer.py` running:
+After starting Lite mode and configuring a Sandbox buyer, run:
 
 ```powershell
-..\.venv\Scripts\python.exe scenario_injector.py --scenario all
+..\.venv\Scripts\python.exe scripts\e2e_sandbox.py
 ```
 
-The injector creates:
+The script prints an approval link for each scenario and waits for the default Sandbox buyer to approve it. It then verifies:
 
-- **mule:** ten senders credit `C_MULE_1` in five simulated minutes, followed by a 95% cash-out.
-- **night:** forty daytime transactions for `C_DAY_USER`, followed by a 02:30 transfer at 8x the average.
-- **travel:** Nagpur followed by London 20 minutes later.
+- Normal payment -> `CAPTURED`
+- High-risk demo override -> 2FA -> `CAPTURED`
+- Three wrong OTPs -> `PENDING_REVIEW` -> analyst `BLOCK` -> `VOIDED`
+- PayPal `INSTRUMENT_DECLINED` mock -> graceful `FAILED`
 
-The extra `scenario` field is for demonstration metadata only; agents ignore it.
+## Limitations
 
-## Dataset and Evaluation
+- PaySim has no real timestamps or locations; stream data and demo overrides are explicitly simulated.
+- The PayPal integration is Sandbox-only and uses a manual Sandbox buyer approval step.
+- Country-only geo checks skip distance and impossible-travel calculations.
+- LLM investigation is advisory and optional; it does not replace deterministic policy or analyst review.
+- Production deployment still needs managed secrets, observability, and stronger authentication around analyst operations.
 
-PaySim does not contain real timestamps or real transaction locations. The producer and scenario tools simulate `event_time`, latitude, longitude, city, and country for the demo.
+## What I added after Oct 1, 2026
 
-Run tests:
+Grounded in the repository history since October 1, 2026:
+
+- Deterministic Frequency, Time, and Geo agents plus the orchestrator and policy engine (`4a85946`, `e5ca99c`, `202ffd2`, `e9f4e80`).
+- FastAPI risk API and database-backed 2FA flow (`1a74995`, `a61ab7b`).
+- PaySim scenario injection and offline evaluation (`1704f26`).
+- Transaction story ledger and scroll-driven story (`d79417d`, `975bcd2`).
+- Live command center, SSE feed, locations map, and review queue (`ec6c061`).
+- Interactive fraud scenario demo and E2E story checks (`6663972`).
+- PayPal Sandbox client, checkout state machine, privacy-preserving order storage, Lite startup, investigator, Shop, and analyst workflow were added after those commits in the current working tree.
+
+## Tests
 
 ```powershell
 ..\.venv\Scripts\python.exe -m pytest -q
+Set-Location frontend; npm run lint; npm run build
 ```
-
-Run the offline evaluator. It uses separate `eval_*` tables and removes labels before sending transactions to the orchestrator; `isFraud` is used only afterward for metrics:
-
-```powershell
-..\.venv\Scripts\python.exe evaluate.py --reset
-```
-
-The evaluator writes `results/metrics.json` and prints precision, recall, F1, false-positive rate, average latency, and a confusion matrix.
-
-Latest recorded metrics from `results/metrics.json`:
-
-| Metric | Value |
-|---|---:|
-| Rows evaluated | 1,000 |
-| Precision | 0.009 |
-| Recall | 1.000 |
-| F1 | 0.018 |
-| False-positive rate | 1.000 |
-| Average latency | 16.27 ms |
-| True positive | 9 |
-| False positive | 991 |
-| False negative | 0 |
-| True negative | 0 |

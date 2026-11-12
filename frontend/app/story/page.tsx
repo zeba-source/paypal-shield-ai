@@ -61,7 +61,7 @@ export default function StoryPage() {
 
 	return <main className="story-page shell">
 		<motion.div className="story-progress" style={{ scaleX: progress }} aria-hidden="true" />
-		<header className="topbar"><Link href="/story" className="brand"><span className="brand-mark"><ShieldCheck size={19} /></span><span>FinSight <small>risk intelligence</small></span></Link><nav><Link className="active" href="/story">Story</Link><Link href="/live">Live</Link><Link href="/demo">Demo</Link></nav><ConnectionPill apiUp={Boolean(overview)} streamConnected={stream.connected} /></header>
+		<header className="topbar"><Link href="/story" className="brand"><span className="brand-mark"><ShieldCheck size={19} /></span><span>FinSight <small>risk intelligence</small></span></Link><nav><Link className="active" href="/story">Story</Link><Link href="/live">Live</Link><Link href="/demo">Demo</Link><Link href="/shop">Shop</Link></nav><ConnectionPill apiUp={Boolean(overview)} streamConnected={stream.connected} /></header>
 		<div className="story-layout">
 			<aside className="story-index" aria-label="Story sections"><span className="eyebrow">THE BRIEF</span>{sectionNames.map((name, index) => <a href={`#story-${index + 1}`} key={name}><span>0{index + 1}</span>{name}</a>)}</aside>
 			<div className="story-content">

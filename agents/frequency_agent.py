@@ -13,9 +13,10 @@ class FrequencyAgent:
     def evaluate(self, txn: dict) -> dict:
         txn_id = txn.get("txn_id")
         event_time = self._event_time(txn.get("event_time"))
-        sender = txn.get("nameOrig")
-        receiver = txn.get("nameDest")
+        sender = txn.get("payer_id") or txn.get("nameOrig")
+        receiver = txn.get("merchant_id") or txn.get("nameDest")
         amount = self._number(txn.get("amount"))
+        is_payment = txn.get("type") == "PAYMENT"
 
         if not event_time or not sender or not receiver:
             return self._result(0, ["insufficient history"], {})
@@ -27,6 +28,27 @@ class FrequencyAgent:
 
         score = 0
         reasons = []
+        if is_payment:
+            if features["outgoing_count_5m"] >= 6:
+                score += 45
+                reasons.append(
+                    f"{features['outgoing_count_5m']} payments from payer {sender} in 5 minutes"
+                )
+            elif features["outgoing_count_5m"] >= 3:
+                score += 20
+                reasons.append(
+                    f"Payment velocity increased to {features['outgoing_count_5m']} in 5 minutes"
+                )
+            if features["outgoing_count_1h"] >= 8:
+                score += 20
+                reasons.append(
+                    f"Payer made {features['outgoing_count_1h']} payments in the last hour"
+                )
+            if features["receiver_incoming_unique_senders_1h"] >= FREQUENCY_THRESHOLDS["mule_unique_senders"]:
+                score += 25
+                reasons.append(
+                    f"Merchant received payments from {features['receiver_incoming_unique_senders_1h']} payers in one hour"
+                )
         if (
             features["incoming_unique_senders_1h"] >= FREQUENCY_THRESHOLDS["mule_unique_senders"]
             and FREQUENCY_THRESHOLDS["pass_through_min"]

@@ -18,7 +18,7 @@ class TimeAgent:
         self.profiles_table = f"{table_prefix}account_profiles"
 
     def evaluate(self, txn: dict) -> dict:
-        account_id = txn.get("nameOrig")
+        account_id = txn.get("payer_id") or txn.get("nameOrig")
         event_time = self._event_time(txn.get("event_time"))
         if not account_id or event_time is None:
             return self._result(0, ["insufficient history"], {})
@@ -27,6 +27,7 @@ class TimeAgent:
         txn_count = int(profile.get("txn_count") or 0) if profile else 0
         histogram = self._histogram(profile.get("hour_histogram") if profile else None)
         amount = self._number(txn.get("amount"))
+        is_payment = txn.get("type") == "PAYMENT"
         average_amount = self._number(profile.get("avg_amount")) if profile else 0.0
         hour = event_time.hour
         total = sum(histogram)
@@ -67,6 +68,8 @@ class TimeAgent:
         if cold_start:
             score = min(score, 60)
             reasons.append("Cold-start account: limited timing history")
+        elif is_payment and is_night and amount_multiple > 3:
+            reasons.append("Payment is outside the payer's established daytime order pattern")
 
         features = {
             "account_id": account_id,
@@ -83,7 +86,7 @@ class TimeAgent:
         return self._result(min(score, 100), reasons, features)
 
     def update_profile(self, txn: dict):
-        account_id = txn.get("nameOrig")
+        account_id = txn.get("payer_id") or txn.get("nameOrig")
         event_time = self._event_time(txn.get("event_time"))
         if not account_id or event_time is None:
             return None

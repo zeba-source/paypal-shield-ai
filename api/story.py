@@ -9,7 +9,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from kafka import KafkaProducer
 
-from config import BASE_DIR, KAFKA_BOOTSTRAP, TOPIC_TRANSACTIONS
+from config import BASE_DIR, KAFKA_BOOTSTRAP, LITE_MODE, TOPIC_TRANSACTIONS
 from db import get_connection, record_txn_event
 from scenario_injector import mule_events, night_events, travel_events
 
@@ -339,20 +339,21 @@ def demo_scenario(scenario: str):
     baseline = fetch("SELECT COALESCE(MAX(txn_id), 0) AS max_id FROM transactions", one=True)["max_id"]
     
     kafka_published = False
-    try:
-        producer = KafkaProducer(
-            bootstrap_servers=KAFKA_BOOTSTRAP,
-            value_serializer=lambda value: json.dumps(value).encode("utf-8"),
-            request_timeout_ms=1000,
-            max_block_ms=1000,
-        )
-        for event in events:
-            producer.send(TOPIC_TRANSACTIONS, event)
-        producer.flush(timeout=2)
-        producer.close(timeout=2)
-        kafka_published = True
-    except Exception as exc:
-        print(f"Kafka publish skipped/failed ({exc}); executing scenario directly.")
+    if not LITE_MODE:
+        try:
+            producer = KafkaProducer(
+                bootstrap_servers=KAFKA_BOOTSTRAP,
+                value_serializer=lambda value: json.dumps(value).encode("utf-8"),
+                request_timeout_ms=1000,
+                max_block_ms=1000,
+            )
+            for event in events:
+                producer.send(TOPIC_TRANSACTIONS, event)
+            producer.flush(timeout=2)
+            producer.close(timeout=2)
+            kafka_published = True
+        except Exception as exc:
+            print(f"Kafka publish skipped/failed ({exc}); executing scenario directly.")
 
     if kafka_published:
         accounts = sorted({event["nameOrig"] for event in events})

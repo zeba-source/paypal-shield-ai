@@ -54,10 +54,24 @@ export default function DemoPage() {
     try { const result = await api.demo(name); setScenario(name); setTxnIds(result.txn_ids); setSelectedTxn(result.txn_ids.at(-1) ?? null); setNotice(`${result.published} transactions published. Following the decisive transaction.`); } catch (error) { setNotice(error instanceof Error ? error.message : "Could not start the scenario."); } finally { setBusy(false); }
   };
   const reset = async () => { try { await api.resetDemo(); setScenario(null); setTxnIds([]); setSelectedTxn(null); setCaseFile(null); setNotice("Demo accounts reset."); } catch { setNotice("Could not reset the demo accounts."); } };
-  const fetchOtp = async () => { if (!selectedTxn) return; try { const result = await api.devOtp(selectedTxn); setOtp(result.otp); setOtpMessage("Development OTP loaded. Try it, or enter a wrong code three times."); } catch { setOtpMessage("The OTP helper is available only when DEV_MODE=true."); } };
+  const fetchOtp = async () => {
+    if (!selectedTxn) return;
+    setOtpMessage("Waiting for the verification request...");
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      try {
+        const result = await api.devOtp(selectedTxn);
+        setOtp(result.otp);
+        setOtpMessage("Development OTP loaded. Try it, or enter a wrong code three times.");
+        return;
+      } catch {
+        await new Promise(resolve => window.setTimeout(resolve, 500));
+      }
+    }
+    setOtpMessage("OTP is not ready yet. Confirm the backend and risk consumer are running, then try again.");
+  };
   const verify = async () => { if (!selectedTxn || otp.length !== 6) return; try { const result = await api.verify2FA(selectedTxn, otp); setOtpMessage(`Verification status: ${result.status}`); } catch (error) { setOtpMessage(error instanceof Error ? error.message : "Verification failed."); } };
 
-  return <main className="demo-page shell"><header className="topbar"><Link href="/story" className="brand"><span className="brand-mark"><ShieldCheck size={19} /></span><span>FinSight <small>risk intelligence</small></span></Link><nav><Link href="/story">Story</Link><Link href="/live">Live</Link><Link className="active" href="/demo">Demo</Link></nav><ConnectionPill apiUp={stream.connected || Boolean(caseFile)} streamConnected={stream.connected} /></header>
+  return <main className="demo-page shell"><header className="topbar"><Link href="/story" className="brand"><span className="brand-mark"><ShieldCheck size={19} /></span><span>FinSight <small>risk intelligence</small></span></Link><nav><Link href="/story">Story</Link><Link href="/live">Live</Link><Link className="active" href="/demo">Demo</Link><Link href="/shop">Shop</Link></nav><ConnectionPill apiUp={stream.connected || Boolean(caseFile)} streamConnected={stream.connected} /></header>
     <section className="demo-hero"><div><span className="eyebrow">SCENARIO LAB</span><h1>Watch a fraud get caught.</h1><p>Choose a crafted pattern, then follow the real event ledger from receipt to outcome. Every caption names the signal that moved the decision.</p></div><div className="speed-control" role="group" aria-label="Demo speed"><span>Explain mode</span><button className={speed === "1x" ? "selected" : ""} onClick={() => setSpeed("1x")}>1x</button><button className={speed === "0.5x" ? "selected" : ""} onClick={() => setSpeed("0.5x")}>0.5x</button></div></section>
     <section className="scenario-grid">{scenarios.map(item => <Card className={`scenario-card ${item.color}`} key={item.name}><span className="eyebrow">{item.name} pattern</span><h2>{item.title}</h2><p>{item.description}</p><button className="play-button" onClick={() => play(item.name)} disabled={busy}><Play size={15} /> {busy && scenario === item.name ? "Publishing" : "Play scenario"}</button></Card>)}</section>
     <div className="demo-toolbar"><button className="button" onClick={reset}><RotateCcw size={14} /> Reset demo</button>{notice && <span className="demo-notice">{notice}</span>}</div>

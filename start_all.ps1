@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
-    [switch]$NoProducer
+    [switch]$NoProducer,
+    [switch]$NoConsumer
 )
 
 $ErrorActionPreference = "Stop"
@@ -40,44 +41,48 @@ function Start-Window {
 if (-not (Test-Path $Python)) {
     throw "Virtual environment Python was not found at $Python"
 }
-if (-not (Test-Path $KafkaRoot)) {
+if (-not $NoConsumer -and -not $NoProducer -and -not (Test-Path $KafkaRoot)) {
     throw "Kafka installation was not found at $KafkaRoot"
 }
 
 $tracked = @()
-if (-not (Test-PortOpen 2181)) {
+if (-not $NoConsumer -and -not $NoProducer -and -not (Test-PortOpen 2181)) {
     $zk = Start-Window "FinTech ZooKeeper" $KafkaRoot ".\bin\windows\zookeeper-server-start.bat .\config\zookeeper.properties"
     $tracked += @{ title = "FinTech ZooKeeper"; pid = $zk.Id }
 } else {
     Write-Host "ZooKeeper already listening on port 2181."
 }
-Wait-ForPort 2181
+if (-not $NoConsumer -and -not $NoProducer) { Wait-ForPort 2181 }
 
-if (-not (Test-PortOpen 9092)) {
+if (-not $NoConsumer -and -not $NoProducer -and -not (Test-PortOpen 9092)) {
     $kafkaCommand = "`$env:KAFKA_HEAP_OPTS='-Xmx1G -Xms1G'; .\bin\windows\kafka-server-start.bat .\config\server.properties"
     $kafka = Start-Window "FinTech Kafka" $KafkaRoot $kafkaCommand
     $tracked += @{ title = "FinTech Kafka"; pid = $kafka.Id }
 } else {
     Write-Host "Kafka already listening on port 9092."
 }
-Wait-ForPort 9092
+if (-not $NoConsumer -and -not $NoProducer) { Wait-ForPort 9092 }
 
 Push-Location $ProjectRoot
 try {
     & $Python setup_db.py
     if ($LASTEXITCODE -ne 0) { throw "setup_db.py failed with exit code $LASTEXITCODE" }
-    & $Python ensure_topics.py
-    if ($LASTEXITCODE -ne 0) { throw "ensure_topics.py failed with exit code $LASTEXITCODE" }
+    if (-not $NoConsumer -and -not $NoProducer) {
+        & $Python ensure_topics.py
+        if ($LASTEXITCODE -ne 0) { throw "ensure_topics.py failed with exit code $LASTEXITCODE" }
+    }
 
     $api = Start-Window "FinTech API" $ProjectRoot "& '$Python' -m uvicorn api.main:app --port 8000"
     $tracked += @{ title = "FinTech API"; pid = $api.Id }
-    $consumer = Start-Window "FinTech Risk Consumer" $ProjectRoot "& '$Python' -u risk_consumer.py"
-    $tracked += @{ title = "FinTech Risk Consumer"; pid = $consumer.Id }
+    if (-not $NoConsumer) {
+        $consumer = Start-Window "FinTech Risk Consumer" $ProjectRoot "& '$Python' -u risk_consumer.py"
+        $tracked += @{ title = "FinTech Risk Consumer"; pid = $consumer.Id }
+    } else { Write-Host "Risk consumer skipped." }
     $frontend = Start-Window "FinTech Frontend" (Join-Path $ProjectRoot "frontend") "npm run dev"
     $tracked += @{ title = "FinTech Frontend"; pid = $frontend.Id }
     $dashboard = Start-Window "FinTech Dashboard" $ProjectRoot "& '$Python' -m streamlit run dashboard.py --server.headless true"
     $tracked += @{ title = "FinTech Dashboard"; pid = $dashboard.Id }
-    if (-not $NoProducer) {
+    if (-not $NoProducer -and -not $NoConsumer) {
         $producer = Start-Window "FinTech Producer" $ProjectRoot "& '$Python' producer.py --delay 0.05"
         $tracked += @{ title = "FinTech Producer"; pid = $producer.Id }
     } else {

@@ -1,9 +1,109 @@
 .env
-frontend/node_modules/
-frontend/.next/
+.env.*
+!.env.example
+!.env.template
+
+secrets/
+private/
+credentials/
+*.secret
+*.token
+
+.fintech-processes.json
+.agent/
+
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
+*.pyo
+*.pyd
+.Python
 .venv/
 venv/
+ENV/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+dist/
+build/
+
+# Node.js and Next.js
+node_modules/
+.next/
+out/
+.turbo/
+.npm/
+.pnpm-store/
+*.tsbuildinfo
+
+# Logs and temporary files
+*.log
+logs/
+tmp/
+temp/
+*.tmp
+*.bak
+.DS_Store
+Thumbs.db
+
+# Datasets and model artifacts
+data/
+datasets/
+private_data/
+*.csv
+!small_dataset.csv
+!results/ablation.csv
+*.parquet
+*.feather
+*.pkl
+*.pickle
+*.joblib
+*.h5
+*.hdf5
+*.pt
+*.pth
+*.onnx
+*.safetensors
+
+# Published evaluation outputs
+!results/
+!results/metrics.json
+!results/ablation.csv
+
+# Local database storage
+*.sqlite
+*.sqlite3
+*.db
+mysql-data/
+postgres-data/
+redis-data/
+
+# Certificates and private keys
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+id_rsa
+id_ed25519
+
+# Infrastructure state and local credentials
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!.tfvars.example
+.aws/
+.kube/
+
+# IDE files
+.idea/
+*.swp
+*.swo
 
 .env

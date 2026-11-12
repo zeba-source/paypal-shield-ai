@@ -11,7 +11,7 @@ class GeoAgent:
 
     EARTH_RADIUS_KM = 6371.0
     IMPOSSIBLE_SPEED_KMH = 900.0
-    FOREIGN_COUNTRY_SCORE = 30
+    FOREIGN_COUNTRY_SCORE = 45
     FAR_FROM_HOME_SCORE = 15
     IMPOSSIBLE_TRAVEL_SCORE = 60
     TRUSTED_LOCATION_REDUCTION = 15
@@ -22,13 +22,41 @@ class GeoAgent:
         self.profiles_table = f"{table_prefix}account_profiles"
 
     def evaluate(self, txn: dict) -> dict:
-        account_id = txn.get("nameOrig")
+        account_id = txn.get("payer_id") or txn.get("nameOrig")
         current = self._location(txn)
         event_time = self._event_time(txn.get("event_time"))
-        if not account_id or current["lat"] is None or current["lon"] is None or event_time is None:
-            return self._result(0, ["no previous location"], {})
+        if not account_id or event_time is None:
+            return self._result(0, ["insufficient location history"], {})
 
         profile = self._load_profile(account_id)
+        if not profile:
+            return self._result(0, ["no previous location"], {
+                "account_id": account_id,
+                "current_country": current["country"],
+            })
+        country_mismatch = bool(
+            profile.get("home_country")
+            and current["country"]
+            and current["country"] != profile["home_country"]
+        )
+        if current["lat"] is None or current["lon"] is None:
+            reasons = []
+            score = 0
+            if country_mismatch:
+                score += self.FOREIGN_COUNTRY_SCORE
+                reasons.append(
+                    f"Payment country {current['country']} differs from payer home country {profile['home_country']}"
+                )
+            if not reasons:
+                reasons.append("Country is consistent; distance checks skipped without coordinates")
+            return self._result(score, reasons, {
+                "account_id": account_id,
+                "distance_km": None,
+                "implied_speed_kmh": None,
+                "home_country": profile.get("home_country"),
+                "current_country": current["country"],
+                "country_mismatch": country_mismatch,
+            })
         if not profile or profile.get("last_lat") is None or profile.get("last_lon") is None:
             return self._result(0, ["no previous location"], {
                 "account_id": account_id,
@@ -57,7 +85,7 @@ class GeoAgent:
                 f"{profile.get('last_city') or 'Previous location'} -> {current['city'] or 'current location'} "
                 f"in {self._format_minutes(elapsed_hours * 60)} (implied {implied_speed:,.0f} km/h)"
             )
-        if profile.get("home_country") and current["country"] and current["country"] != profile["home_country"]:
+        if country_mismatch:
             score += self.FOREIGN_COUNTRY_SCORE
             reasons.append(f"Current country {current['country']} differs from home country {profile['home_country']}")
         if home_distance > self.HOME_DISTANCE_KM:
@@ -84,10 +112,10 @@ class GeoAgent:
         return self._result(min(score, 100), reasons, features)
 
     def update_profile(self, txn: dict):
-        account_id = txn.get("nameOrig")
+        account_id = txn.get("payer_id") or txn.get("nameOrig")
         event_time = self._event_time(txn.get("event_time"))
         current = self._location(txn)
-        if not account_id or event_time is None or current["lat"] is None or current["lon"] is None:
+        if not account_id or event_time is None:
             return None
 
         conn = get_connection()
@@ -107,6 +135,9 @@ class GeoAgent:
             home_country = home.get("home_country") or current["country"]
             home_lat = home.get("home_lat") if home.get("home_lat") is not None else current["lat"]
             home_lon = home.get("home_lon") if home.get("home_lon") is not None else current["lon"]
+            last_lat = current["lat"] if current["lat"] is not None else home.get("last_lat")
+            last_lon = current["lon"] if current["lon"] is not None else home.get("last_lon")
+            last_city = current["city"] if current["city"] else home.get("last_city")
             cursor.execute(
                 f"""
                 INSERT INTO {self.profiles_table} (
@@ -126,7 +157,7 @@ class GeoAgent:
                 """,
                 (
                     account_id, home_city, home_country, home_lat, home_lon,
-                    json.dumps(trusted), event_time, current["lat"], current["lon"], current["city"],
+                    json.dumps(trusted), event_time, last_lat, last_lon, last_city,
                 ),
             )
             conn.commit()
@@ -160,7 +191,7 @@ class GeoAgent:
             "lat": GeoAgent._optional_number(txn.get("lat")),
             "lon": GeoAgent._optional_number(txn.get("lon")),
             "city": txn.get("city"),
-            "country": txn.get("country"),
+            "country": txn.get("shipping_country") or txn.get("country"),
         }
 
     @staticmethod
